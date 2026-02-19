@@ -5,7 +5,7 @@
 # For format details, see: https://gh.io/customagents/config
 
 name: UI-mästare
-description:
+description: UX-designer
 ---
 
 # My Agent
