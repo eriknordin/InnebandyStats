@@ -3,15 +3,18 @@
     ViewData["Title"] = "Poängliga";
 }
 
-<div class="container mt-4">
-    <h1 class="mb-4">Innebandy Poängliga</h1>
+<div class="search-container">
+    <div class="text-center mb-5">
+        <h1 class="display-4 mb-3">🏑 Innebandy Poängliga</h1>
+        <p class="lead text-muted">Sök och utforska statistik från svenska innebandyserier</p>
+    </div>
 
-    <form method="post" class="mb-4">
-        <div class="row g-3 align-items-end">
-            <div class="col-md-6">
+    <form method="post" class="search-form">
+        <div class="row g-3 justify-content-center">
+            <div class="col-lg-8 col-md-10">
                 <label for="searchInput" class="form-label">Välj serie</label>
-                <input type="text" class="form-control" id="searchInput"
-                       placeholder="Sök serie..." autocomplete="off" />
+                <input type="text" class="form-control form-control-lg" id="searchInput"
+                       placeholder="Börja skriva för att söka efter en serie..." autocomplete="off" />
                 <select class="form-select mt-2" id="competitionSelect" name="competitionId" size="10"
                         style="display:none;">
                     @foreach (var c in Model.AvailableCompetitions)
@@ -22,16 +25,22 @@
                 </select>
                 <input type="hidden" id="competitionId" name="competitionId" value="@(Model.CompetitionId > 0 ? Model.CompetitionId.ToString() : "")" />
             </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-primary btn-lg">Hämta poängliga</button>
+            <div class="col-lg-8 col-md-10 text-center">
+                <button type="submit" class="btn btn-primary btn-lg px-5">
+                    <span style="font-size: 1.2rem;">🔍</span> Hämta poängliga
+                </button>
             </div>
         </div>
     </form>
 
     @if (!string.IsNullOrEmpty(Model?.ErrorMessage))
     {
-        <div class="alert alert-danger" role="alert">
-            @Model.ErrorMessage
+        <div class="row justify-content-center mt-4">
+            <div class="col-lg-8 col-md-10">
+                <div class="alert alert-danger" role="alert">
+                    <strong>⚠️ Fel:</strong> @Model.ErrorMessage
+                </div>
+            </div>
         </div>
     }
 </div>

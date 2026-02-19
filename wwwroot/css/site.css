@@ -1,5 +1,17 @@
+:root {
+  --primary-color: #0d6efd;
+  --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --secondary-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  --success-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  --dark-bg: #1a1a2e;
+  --darker-bg: #16213e;
+  --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  --card-hover-shadow: 0 15px 40px rgba(0, 0, 0, 0.15);
+}
+
 html {
   font-size: 14px;
+  scroll-behavior: smooth;
 }
 
 @media (min-width: 768px) {
@@ -8,24 +20,400 @@ html {
   }
 }
 
-.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
-}
-
-html {
-  position: relative;
-  min-height: 100%;
-}
-
 body {
   margin-bottom: 60px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  min-height: 100vh;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-.form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
-  color: var(--bs-secondary-color);
-  text-align: end;
+/* Enhanced Focus States */
+.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
+  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #667eea;
+  outline: none;
 }
 
-.form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
-  text-align: start;
+/* Modern Card Styling */
+.container {
+  max-width: 1200px;
+}
+
+.search-container,
+.standings-container {
+  background: white;
+  border-radius: 20px;
+  padding: 3rem;
+  box-shadow: var(--card-shadow);
+  transition: all 0.3s ease;
+}
+
+.filters-card {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-radius: 15px;
+  padding: 2rem;
+  border: 2px solid #dee2e6;
+}
+
+.search-form {
+  padding: 2rem;
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+  border-radius: 15px;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.05);
+}
+
+/* Enhanced Headers */
+h1 {
+  background: var(--primary-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.display-4 {
+  font-size: 3rem;
+  font-weight: 800;
+}
+
+/* Modern Button Styles */
+.btn-primary {
+  background: var(--primary-gradient);
+  border: none;
+  font-weight: 600;
+  padding: 0.75rem 2rem;
+  border-radius: 10px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-outline-secondary {
+  border-radius: 10px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  border-width: 2px;
+}
+
+.btn-outline-secondary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(108, 117, 125, 0.3);
+}
+
+/* Form Controls */
+.form-control, .form-select {
+  border-radius: 10px;
+  border: 2px solid #e9ecef;
+  padding: 0.75rem 1rem;
+  transition: all 0.3s ease;
+}
+
+.form-control-lg {
+  padding: 1rem 1.5rem;
+  font-size: 1.1rem;
+}
+
+.form-control:focus, .form-select:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+.form-label {
+  font-weight: 600;
+  color: #495057;
+  margin-bottom: 0.5rem;
+}
+
+/* Enhanced Table Styling */
+.table-responsive {
+  border-radius: 15px;
+  overflow: hidden;
+  box-shadow: var(--card-shadow);
+  background: white;
+}
+
+.table {
+  margin-bottom: 0;
+}
+
+.table thead {
+  background: var(--primary-gradient);
+}
+
+.table thead th {
+  border: none;
+  padding: 1rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+  color: white;
+}
+
+.table thead th a {
+  color: white !important;
+  text-decoration: none;
+  transition: opacity 0.3s ease;
+}
+
+.table thead th a:hover {
+  opacity: 0.8;
+}
+
+.table tbody tr {
+  transition: all 0.3s ease;
+}
+
+.table tbody tr:hover {
+  background-color: rgba(102, 126, 234, 0.05);
+  transform: scale(1.005);
+}
+
+.table tbody tr.top-player {
+  background: linear-gradient(90deg, rgba(255, 215, 0, 0.1) 0%, rgba(255, 255, 255, 0) 100%);
+}
+
+.table tbody tr.top-1 {
+  background: linear-gradient(90deg, rgba(255, 215, 0, 0.15) 0%, rgba(255, 255, 255, 0) 100%);
+  font-weight: 600;
+}
+
+.table tbody tr.top-2 {
+  background: linear-gradient(90deg, rgba(192, 192, 192, 0.15) 0%, rgba(255, 255, 255, 0) 100%);
+}
+
+.table tbody tr.top-3 {
+  background: linear-gradient(90deg, rgba(205, 127, 50, 0.15) 0%, rgba(255, 255, 255, 0) 100%);
+}
+
+.table td {
+  padding: 1rem;
+  vertical-align: middle;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.rank-col {
+  width: 60px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.rank-badge {
+  font-size: 1.5rem;
+  display: inline-block;
+  animation: bounce 2s infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+/* Respect user's motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .rank-badge {
+    animation: none;
+  }
+  
+  .btn-primary:hover,
+  .btn-outline-secondary:hover,
+  .table tbody tr:hover {
+    transform: none;
+  }
+  
+  .search-container,
+  .standings-container,
+  .filters-card,
+  .table tbody tr {
+    animation: none;
+  }
+}
+
+/* Stat Badges */
+.stat-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.stat-badge.goals {
+  background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%);
+  color: #2d3436;
+}
+
+.stat-badge.assists {
+  background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+  color: white;
+}
+
+.stat-badge.points {
+  background: linear-gradient(135deg, #fd79a8 0%, #e84393 100%);
+  color: white;
+  font-size: 1.05rem;
+}
+
+.stats-summary {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.stats-summary .badge {
+  font-size: 0.95rem;
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  border-radius: 8px;
+}
+
+/* Alert Styling */
+.alert {
+  border-radius: 10px;
+  border: none;
+  padding: 1rem 1.5rem;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.alert-danger {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: white;
+}
+
+/* Navigation Enhancement */
+.navbar {
+  background: var(--primary-gradient) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  padding: 1rem 0;
+}
+
+.navbar-brand {
+  font-weight: 700;
+  font-size: 1.5rem;
+  letter-spacing: -0.5px;
+  transition: all 0.3s ease;
+}
+
+.navbar-brand:hover {
+  transform: scale(1.05);
+}
+
+/* Footer Enhancement */
+.footer {
+  background: white;
+  border-top: none;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.05);
+  padding: 2rem 0;
+  margin-top: 3rem;
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+}
+
+/* Responsive Enhancements */
+@media (max-width: 768px) {
+  .search-container,
+  .standings-container {
+    padding: 1.5rem;
+    border-radius: 10px;
+  }
+  
+  .search-form {
+    padding: 1.5rem;
+  }
+  
+  .filters-card {
+    padding: 1.5rem;
+  }
+  
+  h1 {
+    font-size: 1.75rem;
+  }
+  
+  .display-4 {
+    font-size: 2rem;
+  }
+  
+  .btn-primary {
+    width: 100%;
+    margin-top: 1rem;
+  }
+  
+  .table {
+    font-size: 0.85rem;
+  }
+  
+  .table td, .table th {
+    padding: 0.5rem;
+  }
+  
+  .rank-badge {
+    font-size: 1.2rem;
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.search-container,
+.standings-container,
+.filters-card {
+  animation: fadeIn 0.6s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.table tbody tr {
+  animation: slideIn 0.5s ease-out backwards;
+}
+
+.table tbody tr:nth-child(1) { animation-delay: 0.05s; }
+.table tbody tr:nth-child(2) { animation-delay: 0.1s; }
+.table tbody tr:nth-child(3) { animation-delay: 0.15s; }
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--primary-gradient);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  opacity: 0.8;
 }
