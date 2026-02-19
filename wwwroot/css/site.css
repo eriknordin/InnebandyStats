@@ -221,6 +221,26 @@ h1 {
   50% { transform: translateY(-5px); }
 }
 
+/* Respect user's motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .rank-badge {
+    animation: none;
+  }
+  
+  .btn-primary:hover,
+  .btn-outline-secondary:hover,
+  .table tbody tr:hover {
+    transform: none;
+  }
+  
+  .search-container,
+  .standings-container,
+  .filters-card,
+  .table tbody tr {
+    animation: none;
+  }
+}
+
 /* Stat Badges */
 .stat-badge {
   display: inline-block;
