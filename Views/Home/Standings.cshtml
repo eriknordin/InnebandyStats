@@ -1,0 +1,131 @@
+@model InnebandyStats.Models.CompetitionViewModel
+@{
+    ViewData["Title"] = Model.CompetitionName;
+}
+
+@functions {
+    string SortUrl(string column)
+    {
+        var newDesc = Model.SortBy == column ? !Model.SortDesc : true;
+        var routeValues = new Dictionary<string, string?>
+        {
+            ["id"] = Model.CompetitionId.ToString(),
+            ["sort"] = column,
+            ["desc"] = newDesc.ToString().ToLower()
+        };
+        if (!string.IsNullOrEmpty(Model.FilterTeam)) routeValues["team"] = Model.FilterTeam;
+        if (Model.FilterAge.HasValue) routeValues["age"] = Model.FilterAge.Value.ToString();
+        if (Model.FilterBirthYear.HasValue) routeValues["birthyear"] = Model.FilterBirthYear.Value.ToString();
+        return Url.Action("Standings", "Home", routeValues)!;
+    }
+
+    string SortIndicator(string column)
+    {
+        if (Model.SortBy != column) return "";
+        return Model.SortDesc ? " \u25BC" : " \u25B2";
+    }
+}
+
+<div class="container mt-4">
+    <h1 class="mb-2">@Model.CompetitionName</h1>
+    <a asp-action="Index" class="btn btn-outline-secondary btn-sm mb-3">Ny sökning</a>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger">@Model.ErrorMessage</div>
+    }
+
+    @if (Model.Standings != null)
+    {
+        <form method="get" asp-action="Standings" class="mb-4">
+            <input type="hidden" name="id" value="@Model.CompetitionId" />
+            <input type="hidden" name="sort" value="@Model.SortBy" />
+            <input type="hidden" name="desc" value="@Model.SortDesc.ToString().ToLower()" />
+
+            <div class="row g-3 align-items-end">
+                <div class="col-auto">
+                    <label for="team" class="form-label">Lag</label>
+                    <select name="team" id="team" class="form-select">
+                        <option value="">Alla lag</option>
+                        @foreach (var t in Model.AvailableTeams)
+                        {
+                            <option value="@t" selected="@(Model.FilterTeam == t)">@t</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <label for="age" class="form-label">Ålder</label>
+                    <select name="age" id="age" class="form-select">
+                        <option value="">Alla åldrar</option>
+                        @foreach (var a in Model.AvailableAges)
+                        {
+                            <option value="@a" selected="@(Model.FilterAge == a)">@a år</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <label for="birthyear" class="form-label">Födelseår</label>
+                    <select name="birthyear" id="birthyear" class="form-select">
+                        <option value="">Alla födelseår</option>
+                        @foreach (var y in Model.AvailableBirthYears)
+                        {
+                            <option value="@y" selected="@(Model.FilterBirthYear == y)">@y</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary">Filtrera</button>
+                </div>
+                @if (!string.IsNullOrEmpty(Model.FilterTeam) || Model.FilterAge.HasValue || Model.FilterBirthYear.HasValue)
+                {
+                    <div class="col-auto">
+                        <a asp-action="Standings" asp-route-id="@Model.CompetitionId"
+                           class="btn btn-outline-secondary">Rensa filter</a>
+                    </div>
+                }
+            </div>
+        </form>
+
+        <p class="text-muted">@Model.Standings.Count spelare</p>
+
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th>#</th>
+                        <th><a href="@SortUrl("name")" class="text-white text-decoration-none">Namn@(SortIndicator("name"))</a></th>
+                        <th><a href="@SortUrl("age")" class="text-white text-decoration-none">Ålder@(SortIndicator("age"))</a></th>
+                        <th><a href="@SortUrl("birthyear")" class="text-white text-decoration-none">Födelseår@(SortIndicator("birthyear"))</a></th>
+                        <th><a href="@SortUrl("team")" class="text-white text-decoration-none">Lag@(SortIndicator("team"))</a></th>
+                        <th class="text-center"><a href="@SortUrl("matches")" class="text-white text-decoration-none">M@(SortIndicator("matches"))</a></th>
+                        <th class="text-center"><a href="@SortUrl("goals")" class="text-white text-decoration-none">Mål@(SortIndicator("goals"))</a></th>
+                        <th class="text-center"><a href="@SortUrl("assists")" class="text-white text-decoration-none">Assist@(SortIndicator("assists"))</a></th>
+                        <th class="text-center"><a href="@SortUrl("points")" class="text-white text-decoration-none">Poäng@(SortIndicator("points"))</a></th>
+                        <th class="text-center"><a href="@SortUrl("ppg")" class="text-white text-decoration-none">P/M@(SortIndicator("ppg"))</a></th>
+                        <th class="text-center"><a href="@SortUrl("penalty")" class="text-white text-decoration-none">Utv.min@(SortIndicator("penalty"))</a></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @{ var rank = 1; }
+                    @foreach (var player in Model.Standings)
+                    {
+                        <tr>
+                            <td>@rank</td>
+                            <td><strong>@player.Name</strong></td>
+                            <td>@player.Age</td>
+                            <td>@player.BirthYear</td>
+                            <td>@player.Team</td>
+                            <td class="text-center">@player.Matches</td>
+                            <td class="text-center">@player.Goals</td>
+                            <td class="text-center">@player.Assists</td>
+                            <td class="text-center"><strong>@player.Points</strong></td>
+                            <td class="text-center">@player.PointsPerGame.ToString("0.00")</td>
+                            <td class="text-center">@(player.PenaltyMinutes > 0 ? player.PenaltyMinutes.ToString() : "-")</td>
+                        </tr>
+                        rank++;
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

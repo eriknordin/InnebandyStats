@@ -1,0 +1,112 @@
+@model InnebandyStats.Models.CompetitionViewModel
+@{
+    ViewData["Title"] = "Poängliga";
+}
+
+<div class="container mt-4">
+    <h1 class="mb-4">Innebandy Poängliga</h1>
+
+    <form method="post" class="mb-4">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-6">
+                <label for="searchInput" class="form-label">Välj serie</label>
+                <input type="text" class="form-control" id="searchInput"
+                       placeholder="Sök serie..." autocomplete="off" />
+                <select class="form-select mt-2" id="competitionSelect" name="competitionId" size="10"
+                        style="display:none;">
+                    @foreach (var c in Model.AvailableCompetitions)
+                    {
+                        <option value="@c.CompetitionID"
+                                selected="@(Model.CompetitionId == c.CompetitionID)">@c.Name</option>
+                    }
+                </select>
+                <input type="hidden" id="competitionId" name="competitionId" value="@(Model.CompetitionId > 0 ? Model.CompetitionId.ToString() : "")" />
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary btn-lg">Hämta poängliga</button>
+            </div>
+        </div>
+    </form>
+
+    @if (!string.IsNullOrEmpty(Model?.ErrorMessage))
+    {
+        <div class="alert alert-danger" role="alert">
+            @Model.ErrorMessage
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const searchInput = document.getElementById('searchInput');
+            const select = document.getElementById('competitionSelect');
+            const hiddenInput = document.getElementById('competitionId');
+
+            const allOptions = Array.from(select.options).map(opt => ({
+                value: opt.value,
+                text: opt.text
+            }));
+
+            // Show list on focus
+            searchInput.addEventListener('focus', function () {
+                filterAndShow('');
+            });
+
+            // Filter on input
+            searchInput.addEventListener('input', function () {
+                filterAndShow(this.value);
+            });
+
+            // Handle selection
+            select.addEventListener('change', function () {
+                const selected = select.options[select.selectedIndex];
+                if (selected) {
+                    hiddenInput.value = selected.value;
+                    searchInput.value = selected.text;
+                    select.style.display = 'none';
+                }
+            });
+
+            select.addEventListener('dblclick', function () {
+                const selected = select.options[select.selectedIndex];
+                if (selected) {
+                    hiddenInput.value = selected.value;
+                    searchInput.value = selected.text;
+                    select.style.display = 'none';
+                }
+            });
+
+            // Hide on click outside
+            document.addEventListener('click', function (e) {
+                if (!searchInput.contains(e.target) && !select.contains(e.target)) {
+                    select.style.display = 'none';
+                }
+            });
+
+            function filterAndShow(query) {
+                const lower = query.toLowerCase();
+                select.innerHTML = '';
+
+                const filtered = allOptions.filter(o =>
+                    o.text.toLowerCase().includes(lower)
+                );
+
+                filtered.forEach(o => {
+                    const opt = document.createElement('option');
+                    opt.value = o.value;
+                    opt.text = o.text;
+                    select.appendChild(opt);
+                });
+
+                select.style.display = filtered.length > 0 ? 'block' : 'none';
+            }
+
+            // Pre-fill if we have a selection
+            if (hiddenInput.value) {
+                const match = allOptions.find(o => o.value === hiddenInput.value);
+                if (match) searchInput.value = match.text;
+            }
+        });
+    </script>
+}
