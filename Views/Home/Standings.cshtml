@@ -27,8 +27,9 @@
 }
 
 <div class="container mt-4">
-    <h1 class="mb-2">@Model.CompetitionName</h1>
-    <a asp-action="Index" class="btn btn-outline-secondary btn-sm mb-3">Ny sökning</a>
+    <h1 class="mb-3">
+        <a id="seriesLink" href="#" target="_blank" class="text-decoration-none">@Model.CompetitionName</a>
+    </h1>
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
@@ -111,7 +112,7 @@
                     {
                         <tr>
                             <td>@rank</td>
-                            <td><strong>@player.Name</strong></td>
+                            <td><strong><a href="https://stats.innebandy.se/spelare/@player.PlayerID" target="_blank" class="text-decoration-none text-dark">@player.Name</a></strong></td>
                             <td>@player.Age</td>
                             <td>@player.BirthYear</td>
                             <td>@player.Team</td>
@@ -129,3 +130,15 @@
         </div>
     }
 </div>
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var seasonId = localStorage.getItem('selectedSeasonId') || '43';
+            var link = document.getElementById('seriesLink');
+            if (link) {
+                link.href = 'https://stats.innebandy.se/sasong/' + seasonId + '/serie/@Model.CompetitionId/serietabell';
+            }
+        });
+    </script>
+}
