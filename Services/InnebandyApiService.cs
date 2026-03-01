@@ -250,6 +250,44 @@ public class InnebandyApiService
         return compName;
     }
 
+    public async Task<List<Season>> GetSeasonsAsync()
+    {
+        var cacheKey = "seasons";
+
+        if (_cache.TryGetValue(cacheKey, out List<Season>? cached) && cached != null)
+            return cached;
+
+        var request = await CreateAuthorizedRequest("https://api.innebandy.se/v2/api/seasons/");
+        var response = await _httpClient.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync();
+        var seasons = JsonSerializer.Deserialize<List<Season>>(json, JsonOptions) ?? new List<Season>();
+
+        _cache.Set(cacheKey, seasons, TimeSpan.FromHours(1));
+        return seasons;
+    }
+
+    public async Task<List<Federation>> GetFederationsAsync()
+    {
+        var cacheKey = "federations";
+
+        if (_cache.TryGetValue(cacheKey, out List<Federation>? cached) && cached != null)
+            return cached;
+
+        var request = await CreateAuthorizedRequest("https://api.innebandy.se/v2/api/federations/");
+        var response = await _httpClient.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync();
+        var federations = JsonSerializer.Deserialize<List<Federation>>(json, JsonOptions) ?? new List<Federation>();
+
+        federations = federations.OrderBy(f => f.Name).ToList();
+
+        _cache.Set(cacheKey, federations, TimeSpan.FromHours(1));
+        return federations;
+    }
+
     public async Task<List<Competition>> GetCompetitionsAsync(int seasonId = 43, int federationId = 8)
     {
         var cacheKey = $"competitions_{seasonId}_{federationId}";

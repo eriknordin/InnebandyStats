@@ -23,6 +23,10 @@ public class CompetitionViewModel
     public List<int> AvailableAges { get; set; } = new();
     public List<int> AvailableBirthYears { get; set; } = new();
 
-    // Competition picker
+    // Pickers
+    public List<Season> AvailableSeasons { get; set; } = new();
+    public List<Federation> AvailableFederations { get; set; } = new();
     public List<Competition> AvailableCompetitions { get; set; } = new();
+    public int SelectedSeasonId { get; set; }
+    public int SelectedFederationId { get; set; }
 }

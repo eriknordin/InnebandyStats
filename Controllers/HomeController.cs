@@ -16,21 +16,18 @@ public class HomeController : Controller
 
     public async Task<IActionResult> Index()
     {
-        var competitions = await _apiService.GetCompetitionsAsync();
-        return View(new CompetitionViewModel { AvailableCompetitions = competitions });
+        var vm = await BuildIndexViewModelAsync();
+        return View(vm);
     }
 
     [HttpPost]
-    public async Task<IActionResult> Index(int competitionId)
+    public async Task<IActionResult> Index(int competitionId, int seasonId, int federationId)
     {
         if (competitionId <= 0)
         {
-            var competitions = await _apiService.GetCompetitionsAsync();
-            return View(new CompetitionViewModel
-            {
-                AvailableCompetitions = competitions,
-                ErrorMessage = "Välj en serie."
-            });
+            var vm = await BuildIndexViewModelAsync(seasonId, federationId);
+            vm.ErrorMessage = "Välj en serie.";
+            return View(vm);
         }
 
         try
@@ -40,14 +37,18 @@ public class HomeController : Controller
         }
         catch (Exception ex)
         {
-            var competitions = await _apiService.GetCompetitionsAsync();
-            return View(new CompetitionViewModel
-            {
-                CompetitionId = competitionId,
-                AvailableCompetitions = competitions,
-                ErrorMessage = $"Ett fel uppstod: {ex.Message}"
-            });
+            var vm = await BuildIndexViewModelAsync(seasonId, federationId);
+            vm.CompetitionId = competitionId;
+            vm.ErrorMessage = $"Ett fel uppstod: {ex.Message}";
+            return View(vm);
         }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetCompetitions(int seasonId, int federationId)
+    {
+        var competitions = await _apiService.GetCompetitionsAsync(seasonId, federationId);
+        return Json(competitions.Select(c => new { c.CompetitionID, c.Name }));
     }
 
     public async Task<IActionResult> Standings(int id, string? team, int? age, int? birthyear, string sort = "points", bool desc = true)
@@ -60,7 +61,6 @@ public class HomeController : Controller
             var allStandings = await _apiService.GetStandingsAsync(id);
             var competitionName = await _apiService.GetCompetitionNameAsync(id);
 
-            // Available filter values (from full dataset)
             var availableTeams = allStandings
                 .Select(p => p.Team)
                 .Where(t => !string.IsNullOrEmpty(t))
@@ -82,7 +82,6 @@ public class HomeController : Controller
                 .OrderBy(y => y)
                 .ToList();
 
-            // Apply filters
             var filtered = allStandings.AsEnumerable();
 
             if (!string.IsNullOrEmpty(team))
@@ -94,7 +93,6 @@ public class HomeController : Controller
             if (birthyear.HasValue)
                 filtered = filtered.Where(p => p.BirthYear == birthyear.Value);
 
-            // Apply sort
             filtered = sort switch
             {
                 "name" => desc ? filtered.OrderByDescending(p => p.Name) : filtered.OrderBy(p => p.Name),
@@ -144,6 +142,27 @@ public class HomeController : Controller
                 ErrorMessage = $"Ett fel uppstod: {ex.Message}"
             });
         }
+    }
+
+    private async Task<CompetitionViewModel> BuildIndexViewModelAsync(int? seasonId = null, int? federationId = null)
+    {
+        var seasons = await _apiService.GetSeasonsAsync();
+        var federations = await _apiService.GetFederationsAsync();
+
+        var currentSeason = seasons.FirstOrDefault(s => s.IsCurrentSeason);
+        var selectedSeasonId = seasonId ?? currentSeason?.SeasonID ?? seasons.FirstOrDefault()?.SeasonID ?? 43;
+        var selectedFederationId = federationId ?? 8; // Stockholms IBF default
+
+        var competitions = await _apiService.GetCompetitionsAsync(selectedSeasonId, selectedFederationId);
+
+        return new CompetitionViewModel
+        {
+            AvailableSeasons = seasons,
+            AvailableFederations = federations,
+            AvailableCompetitions = competitions,
+            SelectedSeasonId = selectedSeasonId,
+            SelectedFederationId = selectedFederationId
+        };
     }
 
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]

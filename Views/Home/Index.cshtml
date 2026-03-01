@@ -8,22 +8,43 @@
 
     <form method="post" class="mb-4">
         <div class="row g-3 align-items-end">
-            <div class="col-md-6">
-                <label for="searchInput" class="form-label">Välj serie</label>
-                <input type="text" class="form-control" id="searchInput"
-                       placeholder="Sök serie..." autocomplete="off" />
-                <select class="form-select mt-2" id="competitionSelect" name="competitionId" size="10"
-                        style="display:none;">
-                    @foreach (var c in Model.AvailableCompetitions)
+            <div class="col-md-3">
+                <label for="seasonSelect" class="form-label">Välj säsong</label>
+                <select class="form-select" id="seasonSelect" name="seasonId">
+                    @foreach (var s in Model.AvailableSeasons)
                     {
-                        <option value="@c.CompetitionID"
-                                selected="@(Model.CompetitionId == c.CompetitionID)">@c.Name</option>
+                        <option value="@s.SeasonID" selected="@(s.SeasonID == Model.SelectedSeasonId)">@s.Name</option>
                     }
                 </select>
-                <input type="hidden" id="competitionId" name="competitionId" value="@(Model.CompetitionId > 0 ? Model.CompetitionId.ToString() : "")" />
             </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-primary btn-lg">Hämta poängliga</button>
+            <div class="col-md-3">
+                <label for="federationSelect" class="form-label">Välj förbund</label>
+                <select class="form-select" id="federationSelect" name="federationId">
+                    @foreach (var f in Model.AvailableFederations)
+                    {
+                        <option value="@f.FederationID" selected="@(f.FederationID == Model.SelectedFederationId)">@f.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label for="searchInput" class="form-label">Välj serie</label>
+                <div class="position-relative">
+                    <input type="text" class="form-control" id="searchInput"
+                           placeholder="Sök serie..." autocomplete="off" />
+                    <select class="form-select mt-1 position-absolute" id="competitionSelect" size="10"
+                            style="display:none; z-index:1000;">
+                        @foreach (var c in Model.AvailableCompetitions)
+                        {
+                            <option value="@c.CompetitionID"
+                                    selected="@(Model.CompetitionId == c.CompetitionID)">@c.Name</option>
+                        }
+                    </select>
+                </div>
+                <input type="hidden" id="competitionId" name="competitionId"
+                       value="@(Model.CompetitionId > 0 ? Model.CompetitionId.ToString() : "")" />
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">Hämta</button>
             </div>
         </div>
     </form>
@@ -39,14 +60,53 @@
 @section Scripts {
     <script>
         document.addEventListener('DOMContentLoaded', function () {
+            const seasonSelect = document.getElementById('seasonSelect');
+            const federationSelect = document.getElementById('federationSelect');
             const searchInput = document.getElementById('searchInput');
-            const select = document.getElementById('competitionSelect');
+            const competitionSelect = document.getElementById('competitionSelect');
             const hiddenInput = document.getElementById('competitionId');
 
-            const allOptions = Array.from(select.options).map(opt => ({
-                value: opt.value,
-                text: opt.text
-            }));
+            let allOptions = getOptionsFromSelect();
+
+            function getOptionsFromSelect() {
+                return Array.from(competitionSelect.options).map(opt => ({
+                    value: opt.value,
+                    text: opt.text
+                }));
+            }
+
+            // Reload competitions when season or federation changes
+            seasonSelect.addEventListener('change', loadCompetitions);
+            federationSelect.addEventListener('change', loadCompetitions);
+
+            async function loadCompetitions() {
+                const seasonId = seasonSelect.value;
+                const federationId = federationSelect.value;
+
+                searchInput.value = '';
+                hiddenInput.value = '';
+                competitionSelect.style.display = 'none';
+                searchInput.placeholder = 'Laddar serier...';
+
+                try {
+                    const response = await fetch(`/Home/GetCompetitions?seasonId=${seasonId}&federationId=${federationId}`);
+                    const data = await response.json();
+
+                    competitionSelect.innerHTML = '';
+                    allOptions = data.map(c => ({ value: c.competitionID.toString(), text: c.name }));
+
+                    allOptions.forEach(o => {
+                        const opt = document.createElement('option');
+                        opt.value = o.value;
+                        opt.text = o.text;
+                        competitionSelect.appendChild(opt);
+                    });
+
+                    searchInput.placeholder = `Sök bland ${allOptions.length} serier...`;
+                } catch (e) {
+                    searchInput.placeholder = 'Kunde inte ladda serier';
+                }
+            }
 
             // Show list on focus
             searchInput.addEventListener('focus', function () {
@@ -59,34 +119,28 @@
             });
 
             // Handle selection
-            select.addEventListener('change', function () {
-                const selected = select.options[select.selectedIndex];
-                if (selected) {
-                    hiddenInput.value = selected.value;
-                    searchInput.value = selected.text;
-                    select.style.display = 'none';
-                }
-            });
+            competitionSelect.addEventListener('change', selectCompetition);
+            competitionSelect.addEventListener('dblclick', selectCompetition);
 
-            select.addEventListener('dblclick', function () {
-                const selected = select.options[select.selectedIndex];
+            function selectCompetition() {
+                const selected = competitionSelect.options[competitionSelect.selectedIndex];
                 if (selected) {
                     hiddenInput.value = selected.value;
                     searchInput.value = selected.text;
-                    select.style.display = 'none';
+                    competitionSelect.style.display = 'none';
                 }
-            });
+            }
 
             // Hide on click outside
             document.addEventListener('click', function (e) {
-                if (!searchInput.contains(e.target) && !select.contains(e.target)) {
-                    select.style.display = 'none';
+                if (!searchInput.contains(e.target) && !competitionSelect.contains(e.target)) {
+                    competitionSelect.style.display = 'none';
                 }
             });
 
             function filterAndShow(query) {
                 const lower = query.toLowerCase();
-                select.innerHTML = '';
+                competitionSelect.innerHTML = '';
 
                 const filtered = allOptions.filter(o =>
                     o.text.toLowerCase().includes(lower)
@@ -96,10 +150,10 @@
                     const opt = document.createElement('option');
                     opt.value = o.value;
                     opt.text = o.text;
-                    select.appendChild(opt);
+                    competitionSelect.appendChild(opt);
                 });
 
-                select.style.display = filtered.length > 0 ? 'block' : 'none';
+                competitionSelect.style.display = filtered.length > 0 ? 'block' : 'none';
             }
 
             // Pre-fill if we have a selection
@@ -107,6 +161,9 @@
                 const match = allOptions.find(o => o.value === hiddenInput.value);
                 if (match) searchInput.value = match.text;
             }
+
+            // Set initial placeholder
+            searchInput.placeholder = `Sök bland ${allOptions.length} serier...`;
         });
     </script>
 }
