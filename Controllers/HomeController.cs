@@ -14,34 +14,23 @@ public class HomeController : Controller
         _apiService = apiService;
     }
 
-    public async Task<IActionResult> Index()
+    public IActionResult Index()
     {
-        var vm = await BuildIndexViewModelAsync();
-        return View(vm);
+        return View();
     }
 
-    [HttpPost]
-    public async Task<IActionResult> Index(int competitionId, int seasonId, int federationId)
+    [HttpGet]
+    public async Task<IActionResult> GetSeasons()
     {
-        if (competitionId <= 0)
-        {
-            var vm = await BuildIndexViewModelAsync(seasonId, federationId);
-            vm.ErrorMessage = "Välj en serie.";
-            return View(vm);
-        }
+        var seasons = await _apiService.GetSeasonsAsync();
+        return Json(seasons.Select(s => new { s.SeasonID, s.Name, s.IsCurrentSeason }));
+    }
 
-        try
-        {
-            await _apiService.GetStandingsAsync(competitionId);
-            return RedirectToAction("Standings", new { id = competitionId });
-        }
-        catch (Exception ex)
-        {
-            var vm = await BuildIndexViewModelAsync(seasonId, federationId);
-            vm.CompetitionId = competitionId;
-            vm.ErrorMessage = $"Ett fel uppstod: {ex.Message}";
-            return View(vm);
-        }
+    [HttpGet]
+    public async Task<IActionResult> GetFederations()
+    {
+        var federations = await _apiService.GetFederationsAsync();
+        return Json(federations.Where(f => f.Active).Select(f => new { f.FederationID, f.Name }));
     }
 
     [HttpGet]
@@ -144,28 +133,7 @@ public class HomeController : Controller
         }
     }
 
-    private async Task<CompetitionViewModel> BuildIndexViewModelAsync(int? seasonId = null, int? federationId = null)
-    {
-        var seasons = await _apiService.GetSeasonsAsync();
-        var federations = await _apiService.GetFederationsAsync();
-
-        var currentSeason = seasons.FirstOrDefault(s => s.IsCurrentSeason);
-        var selectedSeasonId = seasonId ?? currentSeason?.SeasonID ?? seasons.FirstOrDefault()?.SeasonID ?? 43;
-        var selectedFederationId = federationId ?? 8; // Stockholms IBF default
-
-        var competitions = await _apiService.GetCompetitionsAsync(selectedSeasonId, selectedFederationId);
-
-        return new CompetitionViewModel
-        {
-            AvailableSeasons = seasons,
-            AvailableFederations = federations,
-            AvailableCompetitions = competitions,
-            SelectedSeasonId = selectedSeasonId,
-            SelectedFederationId = selectedFederationId
-        };
-    }
-
-    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
+[ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public IActionResult Error()
     {
         return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });

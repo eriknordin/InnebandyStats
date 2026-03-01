@@ -11,14 +11,40 @@
 </head>
 <body>
     <header>
-        <nav class="navbar navbar-expand-sm navbar-dark bg-dark border-bottom box-shadow mb-3">
+        <nav class="navbar navbar-dark bg-dark border-bottom box-shadow">
             <div class="container-fluid">
                 <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">InnebandyStats</a>
             </div>
         </nav>
+        <div class="bg-light border-bottom py-2" id="pickerBar">
+            <div class="container-fluid">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-2">
+                        <label for="seasonSelect" class="form-label small mb-0">Säsong</label>
+                        <select class="form-select form-select-sm" id="seasonSelect"></select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="federationSelect" class="form-label small mb-0">Förbund</label>
+                        <select class="form-select form-select-sm" id="federationSelect"></select>
+                    </div>
+                    <div class="col-md-5">
+                        <label for="seriesSearch" class="form-label small mb-0">Serie</label>
+                        <div class="position-relative">
+                            <input type="text" class="form-control form-control-sm" id="seriesSearch"
+                                   placeholder="Sök serie..." autocomplete="off" />
+                            <select class="form-select form-select-sm position-absolute mt-1" id="seriesList" size="10"
+                                    style="display:none; z-index:1050;"></select>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <button class="btn btn-primary btn-sm w-100" id="goBtn" disabled>Hämta</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </header>
-    <div class="container">
-        <main role="main" class="pb-3">
+    <div class="container-fluid">
+        <main role="main" class="pb-3 mt-3">
             @RenderBody()
         </main>
     </div>
@@ -31,6 +57,129 @@
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     <script src="~/js/site.js" asp-append-version="true"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const seasonSelect = document.getElementById('seasonSelect');
+            const federationSelect = document.getElementById('federationSelect');
+            const seriesSearch = document.getElementById('seriesSearch');
+            const seriesList = document.getElementById('seriesList');
+            const goBtn = document.getElementById('goBtn');
+
+            let allCompetitions = [];
+            let selectedCompetitionId = null;
+
+            // Load seasons and federations on page load
+            Promise.all([
+                fetch('/Home/GetSeasons').then(r => r.json()),
+                fetch('/Home/GetFederations').then(r => r.json())
+            ]).then(([seasons, federations]) => {
+                // Restore from localStorage or use defaults
+                const savedSeason = localStorage.getItem('selectedSeasonId');
+                const savedFederation = localStorage.getItem('selectedFederationId');
+
+                seasons.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s.seasonID;
+                    opt.text = s.name;
+                    if (savedSeason ? s.seasonID == savedSeason : s.isCurrentSeason) opt.selected = true;
+                    seasonSelect.appendChild(opt);
+                });
+
+                federations.forEach(f => {
+                    const opt = document.createElement('option');
+                    opt.value = f.federationID;
+                    opt.text = f.name;
+                    if (savedFederation ? f.federationID == savedFederation : f.federationID == 8) opt.selected = true;
+                    federationSelect.appendChild(opt);
+                });
+
+                loadCompetitions();
+            });
+
+            seasonSelect.addEventListener('change', function () {
+                localStorage.setItem('selectedSeasonId', seasonSelect.value);
+                loadCompetitions();
+            });
+
+            federationSelect.addEventListener('change', function () {
+                localStorage.setItem('selectedFederationId', federationSelect.value);
+                loadCompetitions();
+            });
+
+            async function loadCompetitions() {
+                selectedCompetitionId = null;
+                goBtn.disabled = true;
+                seriesSearch.value = '';
+                seriesList.style.display = 'none';
+                seriesSearch.placeholder = 'Laddar serier...';
+
+                try {
+                    const res = await fetch(`/Home/GetCompetitions?seasonId=${seasonSelect.value}&federationId=${federationSelect.value}`);
+                    const data = await res.json();
+                    allCompetitions = data.map(c => ({ id: c.competitionID.toString(), name: c.name }));
+                    seriesSearch.placeholder = `Sök bland ${allCompetitions.length} serier...`;
+                } catch (e) {
+                    seriesSearch.placeholder = 'Kunde inte ladda serier';
+                    allCompetitions = [];
+                }
+            }
+
+            seriesSearch.addEventListener('focus', () => filterAndShow(''));
+            seriesSearch.addEventListener('input', () => filterAndShow(seriesSearch.value));
+
+            function filterAndShow(query) {
+                const lower = query.toLowerCase();
+                seriesList.innerHTML = '';
+
+                const filtered = allCompetitions.filter(c => c.name.toLowerCase().includes(lower));
+                filtered.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.text = c.name;
+                    seriesList.appendChild(opt);
+                });
+
+                seriesList.style.display = filtered.length > 0 ? 'block' : 'none';
+            }
+
+            seriesList.addEventListener('change', selectSeries);
+            seriesList.addEventListener('dblclick', selectSeries);
+
+            function selectSeries() {
+                const sel = seriesList.options[seriesList.selectedIndex];
+                if (sel) {
+                    selectedCompetitionId = sel.value;
+                    seriesSearch.value = sel.text;
+                    seriesList.style.display = 'none';
+                    goBtn.disabled = false;
+                }
+            }
+
+            document.addEventListener('click', function (e) {
+                if (!seriesSearch.contains(e.target) && !seriesList.contains(e.target)) {
+                    seriesList.style.display = 'none';
+                }
+            });
+
+            goBtn.addEventListener('click', function () {
+                if (selectedCompetitionId) {
+                    window.location.href = `/Home/Standings?id=${selectedCompetitionId}`;
+                }
+            });
+
+            // Also allow Enter key in search field when a competition is selected
+            seriesSearch.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (selectedCompetitionId) {
+                        window.location.href = `/Home/Standings?id=${selectedCompetitionId}`;
+                    }
+                }
+            });
+        });
+    </script>
+
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>
