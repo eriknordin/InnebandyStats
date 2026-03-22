@@ -40,7 +40,7 @@ public class HomeController : Controller
         return Json(competitions.Select(c => new { c.CompetitionID, c.Name }));
     }
 
-    public async Task<IActionResult> Standings(int id, string? team, int? age, int? birthyear, string sort = "points", bool desc = true)
+    public async Task<IActionResult> Standings(int id, string? team, int? age, int? birthyear, string? name, string sort = "points", bool desc = true)
     {
         if (id <= 0)
             return RedirectToAction("Index");
@@ -82,6 +82,9 @@ public class HomeController : Controller
             if (birthyear.HasValue)
                 filtered = filtered.Where(p => p.BirthYear == birthyear.Value);
 
+            if (!string.IsNullOrEmpty(name))
+                filtered = filtered.Where(p => p.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+
             filtered = sort switch
             {
                 "name" => desc ? filtered.OrderByDescending(p => p.Name) : filtered.OrderBy(p => p.Name),
@@ -114,6 +117,7 @@ public class HomeController : Controller
                 FilterTeam = team,
                 FilterAge = age,
                 FilterBirthYear = birthyear,
+                FilterName = name,
                 SortBy = sort,
                 SortDesc = desc,
                 AvailableTeams = availableTeams,
@@ -133,7 +137,90 @@ public class HomeController : Controller
         }
     }
 
-[ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
+    public async Task<IActionResult> SeriesTable(int id)
+    {
+        if (id <= 0)
+            return RedirectToAction("Index");
+
+        try
+        {
+            var table = await _apiService.GetSeriesTableAsync(id);
+            var competitionName = await _apiService.GetCompetitionNameAsync(id);
+
+            return View(new SeriesTableViewModel
+            {
+                CompetitionId = id,
+                CompetitionName = competitionName,
+                Table = table
+            });
+        }
+        catch (Exception ex)
+        {
+            return View(new SeriesTableViewModel
+            {
+                CompetitionId = id,
+                ErrorMessage = $"Ett fel uppstod: {ex.Message}"
+            });
+        }
+    }
+
+    public async Task<IActionResult> TeamView(int competitionId, string teamName, string sort = "points", bool desc = true)
+    {
+        if (competitionId <= 0 || string.IsNullOrEmpty(teamName))
+            return RedirectToAction("Index");
+
+        try
+        {
+            var allStandings = await _apiService.GetStandingsAsync(competitionId);
+            var competitionName = await _apiService.GetCompetitionNameAsync(competitionId);
+
+            var players = allStandings
+                .Where(p => p.Team == teamName)
+                .AsEnumerable();
+
+            players = sort switch
+            {
+                "name" => desc ? players.OrderByDescending(p => p.Name) : players.OrderBy(p => p.Name),
+                "matches" => desc ? players.OrderByDescending(p => p.Matches) : players.OrderBy(p => p.Matches),
+                "goals" => desc
+                    ? players.OrderByDescending(p => p.Goals).ThenByDescending(p => p.Points)
+                    : players.OrderBy(p => p.Goals),
+                "assists" => desc
+                    ? players.OrderByDescending(p => p.Assists).ThenByDescending(p => p.Points)
+                    : players.OrderBy(p => p.Assists),
+                "ppg" => desc
+                    ? players.OrderByDescending(p => p.PointsPerGame).ThenByDescending(p => p.Points)
+                    : players.OrderBy(p => p.PointsPerGame),
+                "penalty" => desc
+                    ? players.OrderByDescending(p => p.PenaltyMinutes)
+                    : players.OrderBy(p => p.PenaltyMinutes),
+                _ => desc
+                    ? players.OrderByDescending(p => p.Points).ThenByDescending(p => p.Goals).ThenBy(p => p.Name)
+                    : players.OrderBy(p => p.Points).ThenBy(p => p.Goals).ThenBy(p => p.Name),
+            };
+
+            return View(new TeamViewModel
+            {
+                CompetitionId = competitionId,
+                CompetitionName = competitionName,
+                TeamName = teamName,
+                Players = players.ToList(),
+                SortBy = sort,
+                SortDesc = desc
+            });
+        }
+        catch (Exception ex)
+        {
+            return View(new TeamViewModel
+            {
+                CompetitionId = competitionId,
+                TeamName = teamName,
+                ErrorMessage = $"Ett fel uppstod: {ex.Message}"
+            });
+        }
+    }
+
+    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public IActionResult Error()
     {
         return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });

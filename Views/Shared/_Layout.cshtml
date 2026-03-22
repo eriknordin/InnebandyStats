@@ -32,8 +32,8 @@
                         <div class="position-relative">
                             <input type="text" class="form-control form-control-sm" id="seriesSearch"
                                    placeholder="Sök serie..." autocomplete="off" />
-                            <select class="form-select form-select-sm position-absolute mt-1" id="seriesList" size="10"
-                                    style="display:none; z-index:1050;"></select>
+                            <ul id="seriesList"
+                                style="display:none; position:absolute; z-index:1050; width:100%; max-height:260px; overflow-y:auto; margin:2px 0 0; padding:0; list-style:none; background:#fff; border:1px solid #ced4da; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,.15);"></ul>
                         </div>
                     </div>
                     <div class="col-md-2">
@@ -125,7 +125,7 @@
                 }
             }
 
-            seriesSearch.addEventListener('focus', () => filterAndShow(''));
+            seriesSearch.addEventListener('focus', () => filterAndShow(seriesSearch.value));
             seriesSearch.addEventListener('input', () => filterAndShow(seriesSearch.value));
 
             function filterAndShow(query) {
@@ -134,26 +134,31 @@
 
                 const filtered = allCompetitions.filter(c => c.name.toLowerCase().includes(lower));
                 filtered.forEach(c => {
-                    const opt = document.createElement('option');
-                    opt.value = c.id;
-                    opt.text = c.name;
-                    seriesList.appendChild(opt);
+                    const li = document.createElement('li');
+                    li.textContent = c.name;
+                    li.dataset.id = c.id;
+                    li.style.cssText = 'padding:8px 12px; cursor:pointer; font-size:0.875rem;';
+                    li.addEventListener('mouseenter', () => li.style.background = '#e9ecef');
+                    li.addEventListener('mouseleave', () => li.style.background = '');
+                    li.addEventListener('mousedown', (e) => {
+                        e.preventDefault(); // prevent input blur before click fires
+                        selectSeries(c.id, c.name);
+                    });
+                    li.addEventListener('touchend', (e) => {
+                        e.preventDefault();
+                        selectSeries(c.id, c.name);
+                    });
+                    seriesList.appendChild(li);
                 });
 
                 seriesList.style.display = filtered.length > 0 ? 'block' : 'none';
             }
 
-            seriesList.addEventListener('change', selectSeries);
-            seriesList.addEventListener('dblclick', selectSeries);
-
-            function selectSeries() {
-                const sel = seriesList.options[seriesList.selectedIndex];
-                if (sel) {
-                    selectedCompetitionId = sel.value;
-                    seriesSearch.value = sel.text;
-                    seriesList.style.display = 'none';
-                    goBtn.disabled = false;
-                }
+            function selectSeries(id, name) {
+                selectedCompetitionId = id;
+                seriesSearch.value = name;
+                seriesList.style.display = 'none';
+                goBtn.disabled = false;
             }
 
             document.addEventListener('click', function (e) {

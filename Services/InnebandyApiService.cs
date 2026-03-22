@@ -238,6 +238,58 @@ public class InnebandyApiService
         return standings;
     }
 
+    public async Task<List<TeamTableEntry>> GetSeriesTableAsync(int competitionId)
+    {
+        var cacheKey = $"seriestable_{competitionId}";
+        if (_cache.TryGetValue(cacheKey, out List<TeamTableEntry>? cached) && cached != null)
+            return cached;
+
+        var matches = await GetMatchesAsync(competitionId);
+        var playedMatches = matches
+            .Where(m => m.MatchStatus == 4 && m.GoalsHomeTeam.HasValue && m.GoalsAwayTeam.HasValue)
+            .ToList();
+
+        var teams = new Dictionary<int, TeamTableEntry>();
+
+        void EnsureTeam(int teamId, string teamName)
+        {
+            if (!teams.ContainsKey(teamId))
+                teams[teamId] = new TeamTableEntry { TeamID = teamId, TeamName = teamName.Trim() };
+        }
+
+        foreach (var match in playedMatches)
+        {
+            EnsureTeam(match.HomeTeamID, match.HomeTeam);
+            EnsureTeam(match.AwayTeamID, match.AwayTeam);
+
+            var home = teams[match.HomeTeamID];
+            var away = teams[match.AwayTeamID];
+            int homeGoals = match.GoalsHomeTeam!.Value;
+            int awayGoals = match.GoalsAwayTeam!.Value;
+
+            home.Played++;
+            away.Played++;
+            home.GoalsFor += homeGoals;
+            home.GoalsAgainst += awayGoals;
+            away.GoalsFor += awayGoals;
+            away.GoalsAgainst += homeGoals;
+
+            if (homeGoals > awayGoals) { home.Wins++; away.Losses++; }
+            else if (homeGoals < awayGoals) { away.Wins++; home.Losses++; }
+            else { home.Draws++; away.Draws++; }
+        }
+
+        var table = teams.Values
+            .OrderByDescending(t => t.Points)
+            .ThenByDescending(t => t.GoalDiff)
+            .ThenByDescending(t => t.GoalsFor)
+            .ThenBy(t => t.TeamName)
+            .ToList();
+
+        _cache.Set(cacheKey, table, TimeSpan.FromMinutes(10));
+        return table;
+    }
+
     public async Task<string> GetCompetitionNameAsync(int competitionId)
     {
         var cacheKey = $"compname_{competitionId}";
