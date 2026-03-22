@@ -13,6 +13,7 @@ public class CompetitionViewModel
     public string? FilterTeam { get; set; }
     public int? FilterAge { get; set; }
     public int? FilterBirthYear { get; set; }
+    public string? FilterName { get; set; }
 
     // Sort
     public string SortBy { get; set; } = "points";
