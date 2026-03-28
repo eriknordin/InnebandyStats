@@ -9,12 +9,13 @@
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/InnebandyStats.styles.css" asp-append-version="true" />
     <style>
-        .fav-btn { background: none; border: none; padding: 0 4px; font-size: 1.1rem; line-height: 1; color: #aaa; cursor: pointer; vertical-align: middle; }
+        .fav-btn { background: none; border: none; padding: 2px 6px; font-size: 1.3rem; line-height: 1; color: #999; cursor: pointer; vertical-align: middle; transition: color .15s; }
         .fav-btn.active { color: #f5a623; }
-        .fav-btn:hover { color: #f5a623; }
-        .fav-inline { background: none; border: none; padding: 0 2px; font-size: 0.85rem; line-height: 1; color: #ccc; cursor: pointer; vertical-align: middle; }
+        .fav-btn:hover { color: #f5a623; transform: scale(1.15); }
+        .fav-inline { background: none; border: none; padding: 0 3px; font-size: 1rem; line-height: 1; color: #bbb; cursor: pointer; vertical-align: middle; transition: color .15s; }
         .fav-inline.active { color: #f5a623; }
         .fav-inline:hover { color: #f5a623; }
+        #favQuickLinks a { transition: background .15s; }
     </style>
 </head>
 <body>
@@ -56,6 +57,12 @@
                         <button class="btn btn-primary btn-sm w-100" id="goBtn" disabled>Hämta</button>
                     </div>
                 </div>
+                <div class="row mt-2" id="favQuickLinks" style="display:none;">
+                    <div class="col-12 d-flex flex-wrap align-items-center gap-2">
+                        <span class="small text-muted">★ Favoriter:</span>
+                        <span id="favQuickLinksContainer"></span>
+                    </div>
+                </div>
             </div>
         </div>
     </header>
@@ -66,8 +73,16 @@
     </div>
 
     <footer class="border-top footer text-muted">
-        <div class="container">
-            &copy; 2026 - InnebandyStats
+        <div class="container d-flex justify-content-between">
+            <span>&copy; 2026 - InnebandyStats</span>
+            <span class="small">
+                Deploy:
+                @{
+                    var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+                    var buildDate = System.IO.File.GetLastWriteTime(assembly.Location);
+                }
+                @buildDate.ToString("yyyy-MM-dd HH:mm")
+            </span>
         </div>
     </footer>
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
@@ -126,6 +141,7 @@
 
             var hasAny = series.length > 0 || teams.length > 0 || players.length > 0;
             emptyMsg.style.display = hasAny ? 'none' : '';
+            renderFavQuickLinks();
 
             if (series.length > 0) {
                 var hdr = document.createElement('li');
@@ -193,6 +209,31 @@
             renderFavMenu();
             document.querySelectorAll('.fav-player-btn[data-id="' + id + '"]').forEach(function(b) {
                 b.textContent = '☆'; b.classList.remove('active');
+            });
+        }
+
+        function renderFavQuickLinks() {
+            var container = document.getElementById('favQuickLinksContainer');
+            var wrapper = document.getElementById('favQuickLinks');
+            if (!container || !wrapper) return;
+            var series = getFavs(FAV_SERIES_KEY);
+            var teams = getFavs(FAV_TEAMS_KEY);
+            container.innerHTML = '';
+            if (series.length === 0 && teams.length === 0) { wrapper.style.display = 'none'; return; }
+            wrapper.style.display = '';
+            series.forEach(function(s) {
+                var a = document.createElement('a');
+                a.href = '/Home/Standings?id=' + encodeURIComponent(s.id);
+                a.className = 'badge bg-primary text-decoration-none';
+                a.textContent = s.name;
+                container.appendChild(a);
+            });
+            teams.forEach(function(t) {
+                var a = document.createElement('a');
+                a.href = '/Home/TeamView?competitionId=' + encodeURIComponent(t.competitionId) + '&teamName=' + encodeURIComponent(t.name);
+                a.className = 'badge bg-secondary text-decoration-none';
+                a.textContent = t.name;
+                container.appendChild(a);
             });
         }
 

@@ -255,8 +255,9 @@ public class HomeController : Controller
         try
         {
             var (matchInfo, homeStandings, awayStandings) = await _apiService.GetMatchStandingsAsync(id);
-            var competitionName = competitionId > 0
-                ? await _apiService.GetCompetitionNameAsync(competitionId)
+            var resolvedCompetitionId = competitionId > 0 ? competitionId : matchInfo?.CompetitionID ?? 0;
+            var competitionName = resolvedCompetitionId > 0
+                ? await _apiService.GetCompetitionNameAsync(resolvedCompetitionId)
                 : matchInfo?.CompetitionName ?? "";
 
             if (matchInfo == null)
@@ -270,10 +271,25 @@ public class HomeController : Controller
                 });
             }
 
+            // Fetch season standings for player season stats
+            var seasonStats = new Dictionary<int, PlayerStanding>();
+            if (resolvedCompetitionId > 0)
+            {
+                try
+                {
+                    var allStandings = await _apiService.GetStandingsAsync(resolvedCompetitionId);
+                    seasonStats = allStandings.ToDictionary(p => p.PlayerID, p => p);
+                }
+                catch
+                {
+                    // Season stats are optional - continue without them
+                }
+            }
+
             return View(new MatchViewModel
             {
                 MatchID = id,
-                CompetitionId = competitionId > 0 ? competitionId : matchInfo.CompetitionID,
+                CompetitionId = resolvedCompetitionId,
                 CompetitionName = competitionName,
                 HomeTeam = matchInfo.HomeTeam,
                 AwayTeam = matchInfo.AwayTeam,
@@ -283,7 +299,8 @@ public class HomeController : Controller
                 Venue = matchInfo.Venue,
                 RoundName = matchInfo.RoundName,
                 HomeTeamStandings = homeStandings,
-                AwayTeamStandings = awayStandings
+                AwayTeamStandings = awayStandings,
+                SeasonStats = seasonStats
             });
         }
         catch (Exception ex)
