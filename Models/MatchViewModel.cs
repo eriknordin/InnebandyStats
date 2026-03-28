@@ -14,5 +14,6 @@ public class MatchViewModel
     public string RoundName { get; set; } = "";
     public List<PlayerStanding> HomeTeamStandings { get; set; } = new();
     public List<PlayerStanding> AwayTeamStandings { get; set; } = new();
+    public Dictionary<int, PlayerStanding> SeasonStats { get; set; } = new();
     public string? ErrorMessage { get; set; }
 }

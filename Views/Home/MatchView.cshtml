@@ -1,6 +1,7 @@
 @model InnebandyStats.Models.MatchViewModel
 @{
     bool isPlayed = Model.GoalsHomeTeam.HasValue && Model.GoalsAwayTeam.HasValue;
+    bool hasSeasonStats = Model.SeasonStats.Count > 0;
     ViewData["Title"] = isPlayed
         ? $"{Model.HomeTeam} {Model.GoalsHomeTeam}–{Model.GoalsAwayTeam} {Model.AwayTeam}"
         : $"{Model.HomeTeam} vs {Model.AwayTeam}";
@@ -55,7 +56,7 @@
                         }
                         else
                         {
-                            <span class="fs-3 text-muted">–</span>
+                            <span class="display-4 text-muted">vs</span>
                         }
                     </div>
                     <div style="width: 200px;">
@@ -65,96 +66,85 @@
             </div>
         </div>
 
-        @if (!isPlayed)
+        @if (Model.HomeTeamStandings.Count == 0 && Model.AwayTeamStandings.Count == 0)
         {
-            <div class="alert alert-info">Matchen har inte spelats ännu.</div>
-        }
-        else if (Model.HomeTeamStandings.Count == 0 && Model.AwayTeamStandings.Count == 0)
-        {
-            <div class="alert alert-info">Ingen spelarstatistik finns tillgänglig för denna match.</div>
+            <div class="alert alert-info">Ingen spelardata finns tillgänglig för denna match.</div>
         }
         else
         {
-            <div class="row">
-                <div class="col-lg-6 mb-4">
-                    <h5 class="mb-3">@Model.HomeTeam</h5>
-                    @if (Model.HomeTeamStandings.Count == 0)
-                    {
-                        <p class="text-muted small">Inga spelardata.</p>
-                    }
-                    else
-                    {
-                        <div class="table-responsive">
-                            <table class="table table-sm table-striped table-hover">
-                                <thead class="table-dark">
-                                    <tr>
-                                        <th>#</th>
-                                        <th>Namn</th>
+            @foreach (var teamData in new[] {
+                new { Name = Model.HomeTeam, Players = Model.HomeTeamStandings },
+                new { Name = Model.AwayTeam, Players = Model.AwayTeamStandings }
+            })
+            {
+                <h5 class="mb-3 mt-4">@teamData.Name</h5>
+                @if (teamData.Players.Count == 0)
+                {
+                    <p class="text-muted small">Inga spelardata.</p>
+                }
+                else
+                {
+                    <div class="table-responsive mb-4">
+                        <table class="table table-sm table-striped table-hover">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Namn</th>
+                                    <th>Födelseår</th>
+                                    @if (isPlayed)
+                                    {
                                         <th class="text-center">Mål</th>
                                         <th class="text-center">Assist</th>
                                         <th class="text-center">Poäng</th>
                                         <th class="text-center">Utv.min</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @{ var rank = 1; }
-                                    @foreach (var p in Model.HomeTeamStandings)
-                                    {
-                                        <tr>
-                                            <td>@rank</td>
-                                            <td><a href="https://stats.innebandy.se/spelare/@p.PlayerID" target="_blank" class="text-decoration-none text-dark fw-semibold">@p.Name</a></td>
-                                            <td class="text-center">@p.Goals</td>
-                                            <td class="text-center">@p.Assists</td>
-                                            <td class="text-center"><strong>@p.Points</strong></td>
-                                            <td class="text-center">@(p.PenaltyMinutes > 0 ? p.PenaltyMinutes.ToString() : "-")</td>
-                                        </tr>
-                                        rank++;
                                     }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-                </div>
-                <div class="col-lg-6 mb-4">
-                    <h5 class="mb-3">@Model.AwayTeam</h5>
-                    @if (Model.AwayTeamStandings.Count == 0)
-                    {
-                        <p class="text-muted small">Inga spelardata.</p>
-                    }
-                    else
-                    {
-                        <div class="table-responsive">
-                            <table class="table table-sm table-striped table-hover">
-                                <thead class="table-dark">
+                                    @if (hasSeasonStats)
+                                    {
+                                        <th class="text-center table-secondary">S:M</th>
+                                        <th class="text-center table-secondary">S:Mål</th>
+                                        <th class="text-center table-secondary">S:Assist</th>
+                                        <th class="text-center table-secondary">S:Poäng</th>
+                                        <th class="text-center table-secondary">S:P/M</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @{ var r = 1; }
+                                @foreach (var p in teamData.Players)
+                                {
+                                    Model.SeasonStats.TryGetValue(p.PlayerID, out var season);
                                     <tr>
-                                        <th>#</th>
-                                        <th>Namn</th>
-                                        <th class="text-center">Mål</th>
-                                        <th class="text-center">Assist</th>
-                                        <th class="text-center">Poäng</th>
-                                        <th class="text-center">Utv.min</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @{ var rank2 = 1; }
-                                    @foreach (var p in Model.AwayTeamStandings)
-                                    {
-                                        <tr>
-                                            <td>@rank2</td>
-                                            <td><a href="https://stats.innebandy.se/spelare/@p.PlayerID" target="_blank" class="text-decoration-none text-dark fw-semibold">@p.Name</a></td>
+                                        <td>@r</td>
+                                        <td><a href="https://stats.innebandy.se/spelare/@p.PlayerID" target="_blank" class="text-decoration-none text-dark fw-semibold">@p.Name</a></td>
+                                        <td>@(p.BirthYear > 0 ? p.BirthYear.ToString() : (season?.BirthYear > 0 ? season.BirthYear.ToString() : ""))</td>
+                                        @if (isPlayed)
+                                        {
                                             <td class="text-center">@p.Goals</td>
                                             <td class="text-center">@p.Assists</td>
                                             <td class="text-center"><strong>@p.Points</strong></td>
                                             <td class="text-center">@(p.PenaltyMinutes > 0 ? p.PenaltyMinutes.ToString() : "-")</td>
-                                        </tr>
-                                        rank2++;
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-                </div>
-            </div>
+                                        }
+                                        @if (hasSeasonStats)
+                                        {
+                                            <td class="text-center table-light">@(season?.Matches.ToString() ?? "-")</td>
+                                            <td class="text-center table-light">@(season?.Goals.ToString() ?? "-")</td>
+                                            <td class="text-center table-light">@(season?.Assists.ToString() ?? "-")</td>
+                                            <td class="text-center table-light"><strong>@(season?.Points.ToString() ?? "-")</strong></td>
+                                            <td class="text-center table-light">@(season?.PointsPerGame.ToString("0.00") ?? "-")</td>
+                                        }
+                                    </tr>
+                                    r++;
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+
+            @if (hasSeasonStats)
+            {
+                <p class="text-muted small">S: = Säsongsstatistik. M=Matcher, P/M=Poäng per match</p>
+            }
         }
     }
 </div>

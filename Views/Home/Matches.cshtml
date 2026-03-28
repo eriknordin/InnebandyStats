@@ -64,7 +64,12 @@
                                     }
                                     else
                                     {
-                                        <span class="text-muted">–</span>
+                                        <a asp-action="MatchView"
+                                           asp-route-id="@match.MatchID"
+                                           asp-route-competitionId="@Model.CompetitionId"
+                                           class="badge bg-secondary text-decoration-none fs-6 px-3 py-1">
+                                            –
+                                        </a>
                                     }
                                 </td>
                                 <td class="fw-semibold" style="width:35%;">@match.AwayTeam</td>
