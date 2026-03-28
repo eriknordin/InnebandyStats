@@ -65,9 +65,10 @@
         </main>
     </div>
 
+@inject Microsoft.Extensions.Configuration.IConfiguration Config
     <footer class="border-top footer text-muted">
         <div class="container">
-            &copy; 2026 - InnebandyStats
+            &copy; 2026 - InnebandyStats &nbsp;|&nbsp; Senaste version: @Config["ReleaseDate"]
         </div>
     </footer>
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
