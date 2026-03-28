@@ -1,0 +1,160 @@
+@model InnebandyStats.Models.MatchViewModel
+@{
+    bool isPlayed = Model.GoalsHomeTeam.HasValue && Model.GoalsAwayTeam.HasValue;
+    ViewData["Title"] = isPlayed
+        ? $"{Model.HomeTeam} {Model.GoalsHomeTeam}–{Model.GoalsAwayTeam} {Model.AwayTeam}"
+        : $"{Model.HomeTeam} vs {Model.AwayTeam}";
+}
+
+<div class="container mt-4">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item">
+                <a asp-action="Matches" asp-route-id="@Model.CompetitionId">@Model.CompetitionName</a>
+            </li>
+            <li class="breadcrumb-item active">
+                @if (isPlayed)
+                {
+                    @($"{Model.HomeTeam} {Model.GoalsHomeTeam}–{Model.GoalsAwayTeam} {Model.AwayTeam}")
+                }
+                else
+                {
+                    @($"{Model.HomeTeam} vs {Model.AwayTeam}")
+                }
+            </li>
+        </ol>
+    </nav>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger">@Model.ErrorMessage</div>
+    }
+    else
+    {
+        <div class="card mb-4">
+            <div class="card-body text-center py-4">
+                <div class="text-muted small mb-2">
+                    @Model.MatchDateTime.ToString("dddd d MMMM yyyy HH:mm", new System.Globalization.CultureInfo("sv-SE"))
+                    @if (!string.IsNullOrEmpty(Model.Venue))
+                    {
+                        <span> · @Model.Venue</span>
+                    }
+                    @if (!string.IsNullOrEmpty(Model.RoundName))
+                    {
+                        <span> · @Model.RoundName</span>
+                    }
+                </div>
+                <div class="d-flex justify-content-center align-items-center gap-4">
+                    <div class="text-end" style="width: 200px;">
+                        <span class="fs-5 fw-bold">@Model.HomeTeam</span>
+                    </div>
+                    <div class="text-center px-3">
+                        @if (isPlayed)
+                        {
+                            <span class="display-4 fw-bold">@Model.GoalsHomeTeam – @Model.GoalsAwayTeam</span>
+                        }
+                        else
+                        {
+                            <span class="fs-3 text-muted">–</span>
+                        }
+                    </div>
+                    <div style="width: 200px;">
+                        <span class="fs-5 fw-bold">@Model.AwayTeam</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (!isPlayed)
+        {
+            <div class="alert alert-info">Matchen har inte spelats ännu.</div>
+        }
+        else if (Model.HomeTeamStandings.Count == 0 && Model.AwayTeamStandings.Count == 0)
+        {
+            <div class="alert alert-info">Ingen spelarstatistik finns tillgänglig för denna match.</div>
+        }
+        else
+        {
+            <div class="row">
+                <div class="col-lg-6 mb-4">
+                    <h5 class="mb-3">@Model.HomeTeam</h5>
+                    @if (Model.HomeTeamStandings.Count == 0)
+                    {
+                        <p class="text-muted small">Inga spelardata.</p>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped table-hover">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Namn</th>
+                                        <th class="text-center">Mål</th>
+                                        <th class="text-center">Assist</th>
+                                        <th class="text-center">Poäng</th>
+                                        <th class="text-center">Utv.min</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @{ var rank = 1; }
+                                    @foreach (var p in Model.HomeTeamStandings)
+                                    {
+                                        <tr>
+                                            <td>@rank</td>
+                                            <td><a href="https://stats.innebandy.se/spelare/@p.PlayerID" target="_blank" class="text-decoration-none text-dark fw-semibold">@p.Name</a></td>
+                                            <td class="text-center">@p.Goals</td>
+                                            <td class="text-center">@p.Assists</td>
+                                            <td class="text-center"><strong>@p.Points</strong></td>
+                                            <td class="text-center">@(p.PenaltyMinutes > 0 ? p.PenaltyMinutes.ToString() : "-")</td>
+                                        </tr>
+                                        rank++;
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+                <div class="col-lg-6 mb-4">
+                    <h5 class="mb-3">@Model.AwayTeam</h5>
+                    @if (Model.AwayTeamStandings.Count == 0)
+                    {
+                        <p class="text-muted small">Inga spelardata.</p>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped table-hover">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Namn</th>
+                                        <th class="text-center">Mål</th>
+                                        <th class="text-center">Assist</th>
+                                        <th class="text-center">Poäng</th>
+                                        <th class="text-center">Utv.min</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @{ var rank2 = 1; }
+                                    @foreach (var p in Model.AwayTeamStandings)
+                                    {
+                                        <tr>
+                                            <td>@rank2</td>
+                                            <td><a href="https://stats.innebandy.se/spelare/@p.PlayerID" target="_blank" class="text-decoration-none text-dark fw-semibold">@p.Name</a></td>
+                                            <td class="text-center">@p.Goals</td>
+                                            <td class="text-center">@p.Assists</td>
+                                            <td class="text-center"><strong>@p.Points</strong></td>
+                                            <td class="text-center">@(p.PenaltyMinutes > 0 ? p.PenaltyMinutes.ToString() : "-")</td>
+                                        </tr>
+                                        rank2++;
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+</div>

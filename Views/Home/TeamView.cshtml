@@ -33,7 +33,13 @@
         </ol>
     </nav>
 
-    <h1 class="mb-1">@Model.TeamName</h1>
+    <h1 class="mb-1">
+        @Model.TeamName
+        <button class="btn btn-sm ms-2 fav-btn fav-team-btn"
+                data-name="@Model.TeamName"
+                data-competition-id="@Model.CompetitionId"
+                title="Favoritmarkera laget">☆</button>
+    </h1>
     <p class="text-muted mb-4">@Model.CompetitionName</p>
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
@@ -72,7 +78,13 @@
                     {
                         <tr>
                             <td>@rank</td>
-                            <td><strong><a href="https://stats.innebandy.se/spelare/@player.PlayerID" target="_blank" class="text-decoration-none text-dark">@player.Name</a></strong></td>
+                            <td>
+                                <strong><a href="https://stats.innebandy.se/spelare/@player.PlayerID" target="_blank" class="text-decoration-none text-dark">@player.Name</a></strong>
+                                <button class="fav-inline fav-player-btn"
+                                        data-id="@player.PlayerID"
+                                        data-name="@player.Name"
+                                        title="Favoritmarkera spelare">☆</button>
+                            </td>
                             <td>@player.Age</td>
                             <td>@player.BirthYear</td>
                             <td class="text-center">@player.Matches</td>
@@ -89,3 +101,12 @@
         </div>
     }
 </div>
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            initFavTeamBtns('@Model.CompetitionId', @Json.Serialize(Model.CompetitionName));
+            initFavPlayerBtns();
+        });
+    </script>
+}

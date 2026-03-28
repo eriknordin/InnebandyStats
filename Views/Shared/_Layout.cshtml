@@ -8,12 +8,28 @@
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/InnebandyStats.styles.css" asp-append-version="true" />
+    <style>
+        .fav-btn { background: none; border: none; padding: 0 4px; font-size: 1.1rem; line-height: 1; color: #aaa; cursor: pointer; vertical-align: middle; }
+        .fav-btn.active { color: #f5a623; }
+        .fav-btn:hover { color: #f5a623; }
+        .fav-inline { background: none; border: none; padding: 0 2px; font-size: 0.85rem; line-height: 1; color: #ccc; cursor: pointer; vertical-align: middle; }
+        .fav-inline.active { color: #f5a623; }
+        .fav-inline:hover { color: #f5a623; }
+    </style>
 </head>
 <body>
     <header>
         <nav class="navbar navbar-dark bg-dark border-bottom box-shadow">
             <div class="container-fluid">
                 <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">InnebandyStats</a>
+                <div class="dropdown">
+                    <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" id="favDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        ★ Favoriter
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" id="favMenu" style="min-width:260px; max-height:400px; overflow-y:auto;">
+                        <li><span class="dropdown-item-text text-muted small" id="favEmpty">Inga favoriter sparade</span></li>
+                    </ul>
+                </div>
             </div>
         </nav>
         <div class="bg-light border-bottom py-2" id="pickerBar">
@@ -59,7 +75,168 @@
     <script src="~/js/site.js" asp-append-version="true"></script>
 
     <script>
+        // ── Favorites helpers ──────────────────────────────────────────────────
+        const FAV_SERIES_KEY  = 'innebandystats_fav_series';
+        const FAV_TEAMS_KEY   = 'innebandystats_fav_teams';
+        const FAV_PLAYERS_KEY = 'innebandystats_fav_players';
+
+        function getFavs(key) {
+            try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+        }
+        function setFavs(key, arr) { localStorage.setItem(key, JSON.stringify(arr)); }
+
+        function isFavSeries(id)  { return getFavs(FAV_SERIES_KEY).some(x => x.id == id); }
+        function isFavTeam(name, competitionId) { return getFavs(FAV_TEAMS_KEY).some(x => x.name === name && x.competitionId == competitionId); }
+        function isFavPlayer(id) { return getFavs(FAV_PLAYERS_KEY).some(x => x.id == id); }
+
+        function toggleFavSeries(id, name) {
+            var favs = getFavs(FAV_SERIES_KEY);
+            var idx = favs.findIndex(x => x.id == id);
+            if (idx >= 0) favs.splice(idx, 1); else favs.push({ id: String(id), name });
+            setFavs(FAV_SERIES_KEY, favs);
+            renderFavMenu();
+            return idx < 0; // true = added
+        }
+        function toggleFavTeam(teamName, competitionId, competitionName) {
+            var favs = getFavs(FAV_TEAMS_KEY);
+            var idx = favs.findIndex(x => x.name === teamName && x.competitionId == competitionId);
+            if (idx >= 0) favs.splice(idx, 1); else favs.push({ name: teamName, competitionId: String(competitionId), competitionName });
+            setFavs(FAV_TEAMS_KEY, favs);
+            renderFavMenu();
+            return idx < 0;
+        }
+        function toggleFavPlayer(id, name) {
+            var favs = getFavs(FAV_PLAYERS_KEY);
+            var idx = favs.findIndex(x => x.id == id);
+            if (idx >= 0) favs.splice(idx, 1); else favs.push({ id: String(id), name });
+            setFavs(FAV_PLAYERS_KEY, favs);
+            renderFavMenu();
+            return idx < 0;
+        }
+
+        function renderFavMenu() {
+            var menu = document.getElementById('favMenu');
+            var emptyMsg = document.getElementById('favEmpty');
+            var series  = getFavs(FAV_SERIES_KEY);
+            var teams   = getFavs(FAV_TEAMS_KEY);
+            var players = getFavs(FAV_PLAYERS_KEY);
+
+            // Remove all items except the empty message placeholder
+            Array.from(menu.querySelectorAll('li:not(:first-child)')).forEach(el => el.remove());
+
+            var hasAny = series.length > 0 || teams.length > 0 || players.length > 0;
+            emptyMsg.style.display = hasAny ? 'none' : '';
+
+            if (series.length > 0) {
+                var hdr = document.createElement('li');
+                hdr.innerHTML = '<span class="dropdown-item-text fw-semibold small text-uppercase text-muted">Serier</span>';
+                menu.appendChild(hdr);
+                series.forEach(function(s) {
+                    var li = document.createElement('li');
+                    li.innerHTML = '<span class="d-flex align-items-center">'
+                        + '<a class="dropdown-item flex-grow-1" href="/Home/Standings?id=' + encodeURIComponent(s.id) + '">' + escHtml(s.name) + '</a>'
+                        + '<button class="btn btn-sm fav-inline active me-2" title="Ta bort favorit" onclick="removeFavSeries(\'' + s.id + '\', this)">★</button>'
+                        + '</span>';
+                    menu.appendChild(li);
+                });
+            }
+
+            if (teams.length > 0) {
+                var hdr2 = document.createElement('li');
+                hdr2.innerHTML = '<li><hr class="dropdown-divider"></li><span class="dropdown-item-text fw-semibold small text-uppercase text-muted">Lag</span>';
+                menu.appendChild(hdr2);
+                teams.forEach(function(t) {
+                    var li = document.createElement('li');
+                    li.innerHTML = '<span class="d-flex align-items-center">'
+                        + '<a class="dropdown-item flex-grow-1" href="/Home/TeamView?competitionId=' + encodeURIComponent(t.competitionId) + '&teamName=' + encodeURIComponent(t.name) + '">' + escHtml(t.name) + ' <small class="text-muted">' + escHtml(t.competitionName || '') + '</small></a>'
+                        + '<button class="btn btn-sm fav-inline active me-2" title="Ta bort favorit" onclick="removeFavTeam(\'' + escHtml(t.name) + '\', \'' + t.competitionId + '\', this)">★</button>'
+                        + '</span>';
+                    menu.appendChild(li);
+                });
+            }
+
+            if (players.length > 0) {
+                var hdr3 = document.createElement('li');
+                hdr3.innerHTML = '<li><hr class="dropdown-divider"></li><span class="dropdown-item-text fw-semibold small text-uppercase text-muted">Spelare</span>';
+                menu.appendChild(hdr3);
+                players.forEach(function(p) {
+                    var li = document.createElement('li');
+                    li.innerHTML = '<span class="d-flex align-items-center">'
+                        + '<a class="dropdown-item flex-grow-1" href="https://stats.innebandy.se/spelare/' + encodeURIComponent(p.id) + '" target="_blank">' + escHtml(p.name) + '</a>'
+                        + '<button class="btn btn-sm fav-inline active me-2" title="Ta bort favorit" onclick="removeFavPlayer(\'' + p.id + '\', this)">★</button>'
+                        + '</span>';
+                    menu.appendChild(li);
+                });
+            }
+        }
+
+        function removeFavSeries(id, btn) {
+            var favs = getFavs(FAV_SERIES_KEY).filter(x => x.id != id);
+            setFavs(FAV_SERIES_KEY, favs);
+            renderFavMenu();
+            // update star btn on page if present
+            document.querySelectorAll('.fav-series-btn[data-id="' + id + '"]').forEach(function(b) {
+                b.textContent = '☆'; b.classList.remove('active');
+            });
+        }
+        function removeFavTeam(name, competitionId, btn) {
+            var favs = getFavs(FAV_TEAMS_KEY).filter(x => !(x.name === name && x.competitionId == competitionId));
+            setFavs(FAV_TEAMS_KEY, favs);
+            renderFavMenu();
+            document.querySelectorAll('.fav-team-btn[data-name="' + name + '"][data-competition-id="' + competitionId + '"]').forEach(function(b) {
+                b.textContent = '☆'; b.classList.remove('active');
+            });
+        }
+        function removeFavPlayer(id, btn) {
+            var favs = getFavs(FAV_PLAYERS_KEY).filter(x => x.id != id);
+            setFavs(FAV_PLAYERS_KEY, favs);
+            renderFavMenu();
+            document.querySelectorAll('.fav-player-btn[data-id="' + id + '"]').forEach(function(b) {
+                b.textContent = '☆'; b.classList.remove('active');
+            });
+        }
+
+        function escHtml(s) {
+            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        function initFavSeriesBtn(btn) {
+            if (!btn) return;
+            var id = btn.dataset.id, name = btn.dataset.name;
+            if (isFavSeries(id)) { btn.textContent = '★'; btn.classList.add('active'); }
+            btn.addEventListener('click', function() {
+                var added = toggleFavSeries(id, name);
+                btn.textContent = added ? '★' : '☆';
+                btn.classList.toggle('active', added);
+            });
+        }
+        function initFavTeamBtns(competitionId, competitionName) {
+            document.querySelectorAll('.fav-team-btn').forEach(function(btn) {
+                var name = btn.dataset.name;
+                if (isFavTeam(name, competitionId)) { btn.textContent = '★'; btn.classList.add('active'); }
+                btn.addEventListener('click', function() {
+                    var added = toggleFavTeam(name, competitionId, competitionName);
+                    btn.textContent = added ? '★' : '☆';
+                    btn.classList.toggle('active', added);
+                });
+            });
+        }
+        function initFavPlayerBtns() {
+            document.querySelectorAll('.fav-player-btn').forEach(function(btn) {
+                var id = btn.dataset.id, name = btn.dataset.name;
+                if (isFavPlayer(id)) { btn.textContent = '★'; btn.classList.add('active'); }
+                btn.addEventListener('click', function() {
+                    var added = toggleFavPlayer(id, name);
+                    btn.textContent = added ? '★' : '☆';
+                    btn.classList.toggle('active', added);
+                });
+            });
+        }
+
+        // ── Picker bar ─────────────────────────────────────────────────────────
         document.addEventListener('DOMContentLoaded', function () {
+            renderFavMenu();
+
             const seasonSelect = document.getElementById('seasonSelect');
             const federationSelect = document.getElementById('federationSelect');
             const seriesSearch = document.getElementById('seriesSearch');
@@ -69,12 +246,10 @@
             let allCompetitions = [];
             let selectedCompetitionId = null;
 
-            // Load seasons and federations on page load
             Promise.all([
                 fetch('/Home/GetSeasons').then(r => r.json()),
                 fetch('/Home/GetFederations').then(r => r.json())
             ]).then(([seasons, federations]) => {
-                // Restore from localStorage or use defaults
                 const savedSeason = localStorage.getItem('selectedSeasonId');
                 const savedFederation = localStorage.getItem('selectedFederationId');
 
@@ -132,22 +307,36 @@
                 const lower = query.toLowerCase();
                 seriesList.innerHTML = '';
 
-                const filtered = allCompetitions.filter(c => c.name.toLowerCase().includes(lower));
+                const favSeries = getFavs(FAV_SERIES_KEY);
+                let filtered = allCompetitions.filter(c => c.name.toLowerCase().includes(lower));
+
                 filtered.forEach(c => {
                     const li = document.createElement('li');
-                    li.textContent = c.name;
-                    li.dataset.id = c.id;
-                    li.style.cssText = 'padding:8px 12px; cursor:pointer; font-size:0.875rem;';
-                    li.addEventListener('mouseenter', () => li.style.background = '#e9ecef');
-                    li.addEventListener('mouseleave', () => li.style.background = '');
-                    li.addEventListener('mousedown', (e) => {
-                        e.preventDefault(); // prevent input blur before click fires
-                        selectSeries(c.id, c.name);
-                    });
-                    li.addEventListener('touchend', (e) => {
+                    const isFav = favSeries.some(f => f.id == c.id);
+                    li.style.cssText = 'display:flex; align-items:center; padding:4px 8px;';
+
+                    const nameSpan = document.createElement('span');
+                    nameSpan.textContent = c.name;
+                    nameSpan.style.cssText = 'flex:1; font-size:0.875rem; cursor:pointer; padding:4px;';
+                    nameSpan.addEventListener('mouseenter', () => nameSpan.style.background = '#e9ecef');
+                    nameSpan.addEventListener('mouseleave', () => nameSpan.style.background = '');
+                    nameSpan.addEventListener('mousedown', (e) => { e.preventDefault(); selectSeries(c.id, c.name); });
+                    nameSpan.addEventListener('touchend', (e) => { e.preventDefault(); selectSeries(c.id, c.name); });
+
+                    const starBtn = document.createElement('button');
+                    starBtn.textContent = isFav ? '★' : '☆';
+                    starBtn.className = 'fav-inline' + (isFav ? ' active' : '');
+                    starBtn.title = isFav ? 'Ta bort favorit' : 'Favoritmarkera';
+                    starBtn.addEventListener('mousedown', function(e) {
                         e.preventDefault();
-                        selectSeries(c.id, c.name);
+                        e.stopPropagation();
+                        var added = toggleFavSeries(c.id, c.name);
+                        starBtn.textContent = added ? '★' : '☆';
+                        starBtn.classList.toggle('active', added);
                     });
+
+                    li.appendChild(nameSpan);
+                    li.appendChild(starBtn);
                     seriesList.appendChild(li);
                 });
 
@@ -173,7 +362,6 @@
                 }
             });
 
-            // Also allow Enter key in search field when a competition is selected
             seriesSearch.addEventListener('keydown', function (e) {
                 if (e.key === 'Enter') {
                     e.preventDefault();

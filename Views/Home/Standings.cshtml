@@ -32,6 +32,10 @@
 <div class="container mt-4">
     <h1 class="mb-1">
         <a id="seriesLink" href="#" target="_blank" class="text-decoration-none">@Model.CompetitionName</a>
+        <button class="btn btn-sm ms-2 fav-btn fav-series-btn"
+                data-id="@Model.CompetitionId"
+                data-name="@Model.CompetitionName"
+                title="Favoritmarkera serien">☆</button>
     </h1>
 
     <ul class="nav nav-tabs mb-4">
@@ -40,6 +44,9 @@
         </li>
         <li class="nav-item">
             <a class="nav-link" asp-action="SeriesTable" asp-route-id="@Model.CompetitionId">Serietabell</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" asp-action="Matches" asp-route-id="@Model.CompetitionId">Matcher</a>
         </li>
     </ul>
 
@@ -129,7 +136,13 @@
                     {
                         <tr>
                             <td>@rank</td>
-                            <td><strong><a href="https://stats.innebandy.se/spelare/@player.PlayerID" target="_blank" class="text-decoration-none text-dark">@player.Name</a></strong></td>
+                            <td>
+                                <strong><a href="https://stats.innebandy.se/spelare/@player.PlayerID" target="_blank" class="text-decoration-none text-dark">@player.Name</a></strong>
+                                <button class="fav-inline fav-player-btn"
+                                        data-id="@player.PlayerID"
+                                        data-name="@player.Name"
+                                        title="Favoritmarkera spelare">☆</button>
+                            </td>
                             <td>@player.Age</td>
                             <td>@player.BirthYear</td>
                             <td>
@@ -137,6 +150,10 @@
                                    asp-route-competitionId="@Model.CompetitionId"
                                    asp-route-teamName="@player.Team"
                                    class="text-decoration-none text-dark">@player.Team</a>
+                                <button class="fav-inline fav-team-btn"
+                                        data-name="@player.Team"
+                                        data-competition-id="@Model.CompetitionId"
+                                        title="Favoritmarkera lag">☆</button>
                             </td>
                             <td class="text-center">@player.Matches</td>
                             <td class="text-center">@player.Goals</td>
@@ -161,6 +178,9 @@
             if (link) {
                 link.href = 'https://stats.innebandy.se/sasong/' + seasonId + '/serie/@Model.CompetitionId/serietabell';
             }
+            initFavSeriesBtn(document.querySelector('.fav-series-btn'));
+            initFavTeamBtns('@Model.CompetitionId', @Json.Serialize(Model.CompetitionName));
+            initFavPlayerBtns();
         });
     </script>
 }
