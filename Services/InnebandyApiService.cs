@@ -363,6 +363,91 @@ public class InnebandyApiService
         return competitions;
     }
 
+    public async Task<(Match? MatchInfo, List<PlayerStanding> HomeStandings, List<PlayerStanding> AwayStandings)> GetMatchStandingsAsync(int matchId)
+    {
+        var cacheKey = $"matchstandings_{matchId}";
+        if (_cache.TryGetValue(cacheKey, out (Match?, List<PlayerStanding>, List<PlayerStanding>) cached))
+            return cached;
+
+        var matchInfo = await GetMatchDetailsAsync(matchId);
+        if (matchInfo == null)
+            return (null, new List<PlayerStanding>(), new List<PlayerStanding>());
+
+        var lineup = await GetLineupAsync(matchId);
+
+        var homeTeamName = matchInfo.HomeTeam.Trim();
+        var awayTeamName = matchInfo.AwayTeam.Trim();
+
+        var playerStats = new Dictionary<int, PlayerStanding>();
+        var isHomePlayer = new Dictionary<int, bool>();
+
+        if (lineup != null)
+        {
+            foreach (var p in lineup.HomeTeamPlayers)
+            {
+                EnsurePlayer(playerStats, p.PlayerID, p.Name, homeTeamName);
+                playerStats[p.PlayerID].Matches = 1;
+                if (p.Age > 0) playerStats[p.PlayerID].Age = p.Age;
+                if (p.BirthYear > 0) playerStats[p.PlayerID].BirthYear = p.BirthYear;
+                isHomePlayer[p.PlayerID] = true;
+            }
+            foreach (var p in lineup.AwayTeamPlayers)
+            {
+                EnsurePlayer(playerStats, p.PlayerID, p.Name, awayTeamName);
+                playerStats[p.PlayerID].Matches = 1;
+                if (p.Age > 0) playerStats[p.PlayerID].Age = p.Age;
+                if (p.BirthYear > 0) playerStats[p.PlayerID].BirthYear = p.BirthYear;
+                isHomePlayer[p.PlayerID] = false;
+            }
+        }
+
+        if (matchInfo.Events != null)
+        {
+            foreach (var evt in matchInfo.Events)
+            {
+                bool evtIsHome = evt.IsHomeTeam == true;
+                var teamName = evtIsHome ? homeTeamName : awayTeamName;
+
+                if (evt.MatchEventTypeID == 1 && evt.PlayerID > 0)
+                {
+                    EnsurePlayer(playerStats, evt.PlayerID, evt.PlayerName, teamName);
+                    if (!isHomePlayer.ContainsKey(evt.PlayerID)) isHomePlayer[evt.PlayerID] = evtIsHome;
+                    playerStats[evt.PlayerID].Goals++;
+
+                    if (evt.PlayerAssistID > 0)
+                    {
+                        EnsurePlayer(playerStats, evt.PlayerAssistID, evt.PlayerAssistName, teamName);
+                        if (!isHomePlayer.ContainsKey(evt.PlayerAssistID)) isHomePlayer[evt.PlayerAssistID] = evtIsHome;
+                        playerStats[evt.PlayerAssistID].Assists++;
+                    }
+                }
+
+                if (evt.MatchEventTypeID == 2 && evt.PlayerID > 0)
+                {
+                    EnsurePlayer(playerStats, evt.PlayerID, evt.PlayerName, teamName);
+                    if (!isHomePlayer.ContainsKey(evt.PlayerID)) isHomePlayer[evt.PlayerID] = evtIsHome;
+                    playerStats[evt.PlayerID].PenaltyMinutes += 2;
+                }
+            }
+        }
+
+        var homeStandings = playerStats
+            .Where(kv => !isHomePlayer.ContainsKey(kv.Key) || isHomePlayer[kv.Key])
+            .Select(kv => kv.Value)
+            .OrderByDescending(p => p.Points).ThenByDescending(p => p.Goals).ThenBy(p => p.Name)
+            .ToList();
+
+        var awayStandings = playerStats
+            .Where(kv => isHomePlayer.ContainsKey(kv.Key) && !isHomePlayer[kv.Key])
+            .Select(kv => kv.Value)
+            .OrderByDescending(p => p.Points).ThenByDescending(p => p.Goals).ThenBy(p => p.Name)
+            .ToList();
+
+        var result = (matchInfo, homeStandings, awayStandings);
+        _cache.Set(cacheKey, result, TimeSpan.FromMinutes(10));
+        return result;
+    }
+
     private static void EnsurePlayer(Dictionary<int, PlayerStanding> dict, int playerId, string name, string team)
     {
         if (!dict.ContainsKey(playerId))

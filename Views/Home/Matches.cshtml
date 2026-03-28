@@ -1,0 +1,92 @@
+@model InnebandyStats.Models.MatchesViewModel
+@{
+    ViewData["Title"] = Model.CompetitionName + " – Matcher";
+}
+
+<div class="container mt-4">
+    <h1 class="mb-1">
+        <a id="seriesLink" href="#" target="_blank" class="text-decoration-none">@Model.CompetitionName</a>
+        <button class="btn btn-sm ms-2 fav-btn fav-series-btn"
+                data-id="@Model.CompetitionId"
+                data-name="@Model.CompetitionName"
+                title="Favoritmarkera serien">☆</button>
+    </h1>
+
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <a class="nav-link" asp-action="Standings" asp-route-id="@Model.CompetitionId">Spelarlista</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" asp-action="SeriesTable" asp-route-id="@Model.CompetitionId">Serietabell</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link active" href="#">Matcher</a>
+        </li>
+    </ul>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger">@Model.ErrorMessage</div>
+    }
+
+    @if (Model.Matches.Count == 0 && string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-info">Inga matcher hittades för denna serie.</div>
+    }
+
+    @if (Model.Matches.Count > 0)
+    {
+        var grouped = Model.Matches.GroupBy(m => string.IsNullOrEmpty(m.RoundName) ? $"Omgång {m.Round}" : m.RoundName).ToList();
+
+        foreach (var group in grouped)
+        {
+            <h5 class="mt-4 mb-2 text-muted">@group.Key</h5>
+            <div class="table-responsive mb-3">
+                <table class="table table-sm table-hover">
+                    <tbody>
+                        @foreach (var match in group)
+                        {
+                            bool isPlayed = match.MatchStatus == 4;
+                            <tr>
+                                <td class="text-muted small" style="width:130px; white-space:nowrap;">
+                                    @match.MatchDateTime.ToString("yyyy-MM-dd HH:mm")
+                                </td>
+                                <td class="text-end fw-semibold" style="width:35%;">@match.HomeTeam</td>
+                                <td class="text-center px-2" style="width:80px; white-space:nowrap;">
+                                    @if (isPlayed && match.GoalsHomeTeam.HasValue && match.GoalsAwayTeam.HasValue)
+                                    {
+                                        <a asp-action="MatchView"
+                                           asp-route-id="@match.MatchID"
+                                           asp-route-competitionId="@Model.CompetitionId"
+                                           class="badge bg-dark text-decoration-none fs-6 px-3 py-1">
+                                            @match.GoalsHomeTeam – @match.GoalsAwayTeam
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">–</span>
+                                    }
+                                </td>
+                                <td class="fw-semibold" style="width:35%;">@match.AwayTeam</td>
+                                <td class="text-muted small">@match.Venue</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var seasonId = localStorage.getItem('selectedSeasonId') || '43';
+            var link = document.getElementById('seriesLink');
+            if (link) {
+                link.href = 'https://stats.innebandy.se/sasong/' + seasonId + '/serie/@Model.CompetitionId/serietabell';
+            }
+            initFavSeriesBtn(document.querySelector('.fav-series-btn'));
+        });
+    </script>
+}

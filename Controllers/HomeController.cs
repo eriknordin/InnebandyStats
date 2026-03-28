@@ -220,6 +220,83 @@ public class HomeController : Controller
         }
     }
 
+    public async Task<IActionResult> Matches(int id)
+    {
+        if (id <= 0)
+            return RedirectToAction("Index");
+
+        try
+        {
+            var matches = await _apiService.GetMatchesAsync(id);
+            var competitionName = await _apiService.GetCompetitionNameAsync(id);
+
+            return View(new MatchesViewModel
+            {
+                CompetitionId = id,
+                CompetitionName = competitionName,
+                Matches = matches.OrderBy(m => m.MatchDateTime).ToList()
+            });
+        }
+        catch (Exception ex)
+        {
+            return View(new MatchesViewModel
+            {
+                CompetitionId = id,
+                ErrorMessage = $"Ett fel uppstod: {ex.Message}"
+            });
+        }
+    }
+
+    public async Task<IActionResult> MatchView(int id, int competitionId)
+    {
+        if (id <= 0)
+            return RedirectToAction("Index");
+
+        try
+        {
+            var (matchInfo, homeStandings, awayStandings) = await _apiService.GetMatchStandingsAsync(id);
+            var competitionName = competitionId > 0
+                ? await _apiService.GetCompetitionNameAsync(competitionId)
+                : matchInfo?.CompetitionName ?? "";
+
+            if (matchInfo == null)
+            {
+                return View(new MatchViewModel
+                {
+                    MatchID = id,
+                    CompetitionId = competitionId,
+                    CompetitionName = competitionName,
+                    ErrorMessage = "Matchen kunde inte hittas."
+                });
+            }
+
+            return View(new MatchViewModel
+            {
+                MatchID = id,
+                CompetitionId = competitionId > 0 ? competitionId : matchInfo.CompetitionID,
+                CompetitionName = competitionName,
+                HomeTeam = matchInfo.HomeTeam,
+                AwayTeam = matchInfo.AwayTeam,
+                GoalsHomeTeam = matchInfo.GoalsHomeTeam,
+                GoalsAwayTeam = matchInfo.GoalsAwayTeam,
+                MatchDateTime = matchInfo.MatchDateTime,
+                Venue = matchInfo.Venue,
+                RoundName = matchInfo.RoundName,
+                HomeTeamStandings = homeStandings,
+                AwayTeamStandings = awayStandings
+            });
+        }
+        catch (Exception ex)
+        {
+            return View(new MatchViewModel
+            {
+                MatchID = id,
+                CompetitionId = competitionId,
+                ErrorMessage = $"Ett fel uppstod: {ex.Message}"
+            });
+        }
+    }
+
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public IActionResult Error()
     {
