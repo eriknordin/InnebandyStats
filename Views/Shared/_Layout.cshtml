@@ -23,6 +23,7 @@
         <nav class="navbar navbar-dark bg-dark border-bottom box-shadow">
             <div class="container-fluid">
                 <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">InnebandyStats</a>
+                <a class="btn btn-outline-light btn-sm me-2" asp-controller="Home" asp-action="Collections">Samlingar</a>
                 <div class="dropdown">
                     <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" id="favDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                         ★ Favoriter &amp; Samlingar
@@ -427,19 +428,45 @@
                     const isFav = favSeries.some(f => f.id == c.id);
                     li.style.cssText = 'display:flex; align-items:center; padding:4px 8px;';
 
+                    // Track touch movement per item to distinguish tap from scroll
+                    let touchStartY = 0, touchStartX = 0, wasDrag = false;
+                    li.addEventListener('touchstart', (e) => {
+                        touchStartY = e.touches[0].clientY;
+                        touchStartX = e.touches[0].clientX;
+                        wasDrag = false;
+                    }, { passive: true });
+                    li.addEventListener('touchmove', (e) => {
+                        if (Math.abs(e.touches[0].clientY - touchStartY) > 8 ||
+                            Math.abs(e.touches[0].clientX - touchStartX) > 8) {
+                            wasDrag = true;
+                        }
+                    }, { passive: true });
+
                     const nameSpan = document.createElement('span');
                     nameSpan.textContent = c.name;
-                    nameSpan.style.cssText = 'flex:1; font-size:0.875rem; cursor:pointer; padding:4px;';
+                    nameSpan.style.cssText = 'flex:1; font-size:0.875rem; cursor:pointer; padding:8px 4px;';
                     nameSpan.addEventListener('mouseenter', () => nameSpan.style.background = '#e9ecef');
                     nameSpan.addEventListener('mouseleave', () => nameSpan.style.background = '');
                     nameSpan.addEventListener('mousedown', (e) => { e.preventDefault(); selectSeries(c.id, c.name); });
-                    nameSpan.addEventListener('touchend', (e) => { e.preventDefault(); selectSeries(c.id, c.name); });
+                    nameSpan.addEventListener('touchend', (e) => {
+                        if (wasDrag) return;  // was a scroll – do nothing
+                        e.preventDefault();
+                        selectSeries(c.id, c.name);
+                    });
 
                     const starBtn = document.createElement('button');
                     starBtn.textContent = isFav ? '★' : '☆';
                     starBtn.className = 'fav-inline' + (isFav ? ' active' : '');
                     starBtn.title = isFav ? 'Ta bort favorit' : 'Favoritmarkera';
                     starBtn.addEventListener('mousedown', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        var added = toggleFavSeries(c.id, c.name);
+                        starBtn.textContent = added ? '★' : '☆';
+                        starBtn.classList.toggle('active', added);
+                    });
+                    starBtn.addEventListener('touchend', function(e) {
+                        if (wasDrag) return;
                         e.preventDefault();
                         e.stopPropagation();
                         var added = toggleFavSeries(c.id, c.name);

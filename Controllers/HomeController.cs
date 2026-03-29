@@ -335,6 +335,63 @@ public class HomeController : Controller
         }
     }
 
+    public IActionResult Collections()
+    {
+        return View();
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetTeamSummary(int competitionId, string teamName)
+    {
+        if (competitionId <= 0 || string.IsNullOrEmpty(teamName))
+            return BadRequest();
+
+        try
+        {
+            var a = await _apiService.GetTeamAnalysisAsync(competitionId, teamName);
+            var top = a.TopPlayers.FirstOrDefault();
+            return Json(new
+            {
+                teamName       = a.TeamName,
+                competitionName = a.CompetitionName,
+                competitionId  = a.CompetitionId,
+                tableRank      = a.TableRank,
+                played         = a.TotalPlayed,
+                wins           = a.TableEntry?.Wins  ?? 0,
+                draws          = a.TableEntry?.Draws ?? 0,
+                losses         = a.TableEntry?.Losses ?? 0,
+                points         = a.TableEntry?.Points ?? 0,
+                goalsFor       = a.TableEntry?.GoalsFor ?? 0,
+                goalsAgainst   = a.TableEntry?.GoalsAgainst ?? 0,
+                avgGoalsFor    = a.AvgGoalsFor,
+                avgGoalsAgainst = a.AvgGoalsAgainst,
+                winStreak      = a.CurrentWinStreak,
+                unbeatenStreak = a.CurrentUnbeatenStreak,
+                topScorer = top == null ? null : new
+                {
+                    name     = top.Name,
+                    playerId = top.PlayerID,
+                    goals    = top.Goals,
+                    assists  = top.Assists,
+                    points   = top.Points
+                },
+                recentResults = a.RecentMatches.Select(m => m.ResultLabel).ToArray(),
+                formPlayers   = a.FormPlayers.Take(3).Select(fp => new
+                {
+                    name       = fp.Name,
+                    playerId   = fp.PlayerID,
+                    formGoals  = fp.FormGoals,
+                    formAssists = fp.FormAssists,
+                    formPoints = fp.FormPoints
+                }).ToArray()
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public IActionResult Error()
     {
