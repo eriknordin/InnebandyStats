@@ -314,6 +314,27 @@ public class HomeController : Controller
         }
     }
 
+    public async Task<IActionResult> TeamAnalysis(int competitionId, string teamName)
+    {
+        if (competitionId <= 0 || string.IsNullOrEmpty(teamName))
+            return RedirectToAction("Index");
+
+        try
+        {
+            var analysis = await _apiService.GetTeamAnalysisAsync(competitionId, teamName);
+            return View(analysis);
+        }
+        catch (Exception ex)
+        {
+            return View(new TeamAnalysisViewModel
+            {
+                CompetitionId = competitionId,
+                TeamName = teamName,
+                ErrorMessage = $"Ett fel uppstod: {ex.Message}"
+            });
+        }
+    }
+
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public IActionResult Error()
     {

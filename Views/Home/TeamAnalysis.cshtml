@@ -1,0 +1,377 @@
+@model InnebandyStats.Models.TeamAnalysisViewModel
+@{
+    ViewData["Title"] = Model.TeamName + " – Analys";
+}
+
+<div class="container mt-4">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item">
+                <a asp-action="SeriesTable" asp-route-id="@Model.CompetitionId">@Model.CompetitionName</a>
+            </li>
+            <li class="breadcrumb-item">
+                <a asp-action="TeamView" asp-route-competitionId="@Model.CompetitionId" asp-route-teamName="@Model.TeamName">@Model.TeamName</a>
+            </li>
+            <li class="breadcrumb-item active">Analys</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex align-items-center gap-2 mb-4 flex-wrap">
+        <h1 class="mb-0">@Model.TeamName</h1>
+        <button class="btn fav-btn fav-team-btn"
+                data-name="@Model.TeamName"
+                data-competition-id="@Model.CompetitionId"
+                title="Favoritmarkera laget">☆</button>
+        <button class="btn btn-outline-secondary btn-sm ms-2" id="addToCollectionBtn"
+                data-team-name="@Model.TeamName"
+                data-competition-id="@Model.CompetitionId"
+                data-competition-name="@Model.CompetitionName">
+            + Samling
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger">@Model.ErrorMessage</div>
+    }
+    else
+    {
+        <div class="row g-3 mb-4">
+            @* Table position card *@
+            <div class="col-6 col-md-3">
+                <div class="card text-center h-100">
+                    <div class="card-body py-3">
+                        <div class="display-4 fw-bold text-primary">@(Model.TableRank > 0 ? "#" + Model.TableRank : "–")</div>
+                        <div class="text-muted small">Serieplacering</div>
+                    </div>
+                </div>
+            </div>
+            @* Record card *@
+            <div class="col-6 col-md-3">
+                <div class="card text-center h-100">
+                    <div class="card-body py-3">
+                        @if (Model.TableEntry != null)
+                        {
+                            <div class="fs-4 fw-bold">@Model.TableEntry.Wins-@Model.TableEntry.Draws-@Model.TableEntry.Losses</div>
+                            <div class="text-muted small">V-O-F (@Model.TotalPlayed matcher)</div>
+                            <div class="mt-1"><span class="badge bg-dark fs-6">@Model.TableEntry.Points p</span></div>
+                        }
+                        else
+                        {
+                            <div class="text-muted">Ingen tabelldata</div>
+                        }
+                    </div>
+                </div>
+            </div>
+            @* Goals card *@
+            <div class="col-6 col-md-3">
+                <div class="card text-center h-100">
+                    <div class="card-body py-3">
+                        <div class="fs-4 fw-bold">@Model.AvgGoalsFor.ToString("0.0") <span class="text-muted fs-6">– @Model.AvgGoalsAgainst.ToString("0.0")</span></div>
+                        <div class="text-muted small">Snitt mål per match</div>
+                        @if (Model.TableEntry != null)
+                        {
+                            <div class="mt-1 small text-muted">@Model.TableEntry.GoalsFor–@Model.TableEntry.GoalsAgainst tot</div>
+                        }
+                    </div>
+                </div>
+            </div>
+            @* Streak card *@
+            <div class="col-6 col-md-3">
+                <div class="card text-center h-100">
+                    <div class="card-body py-3">
+                        @if (Model.CurrentWinStreak > 1)
+                        {
+                            <div class="fs-4 fw-bold text-success">@Model.CurrentWinStreak</div>
+                            <div class="text-muted small">Raka vinster 🔥</div>
+                        }
+                        else if (Model.CurrentUnbeatenStreak > 1)
+                        {
+                            <div class="fs-4 fw-bold text-warning">@Model.CurrentUnbeatenStreak</div>
+                            <div class="text-muted small">Matcher obesegrade</div>
+                        }
+                        else if (Model.TotalPlayed > 0)
+                        {
+                            <div class="fs-4 fw-bold text-danger">–</div>
+                            <div class="text-muted small">Ingen aktiv serie</div>
+                        }
+                        else
+                        {
+                            <div class="fs-4 fw-bold text-muted">–</div>
+                            <div class="text-muted small">Ingen matchdata</div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            @* Left column *@
+            <div class="col-lg-6">
+                @* Recent matches *@
+                @if (Model.RecentMatches.Any())
+                {
+                    <div class="card mb-4">
+                        <div class="card-header fw-semibold">Senaste @Model.RecentMatches.Count matcher</div>
+                        <div class="card-body p-0">
+                            <table class="table table-sm mb-0">
+                                <tbody>
+                                    @foreach (var m in Model.RecentMatches)
+                                    {
+                                        <tr>
+                                            <td class="ps-3 text-muted small" style="width:90px; white-space:nowrap;">
+                                                @m.MatchDateTime.ToString("MM-dd HH:mm")
+                                            </td>
+                                            <td class="small text-muted" style="width:32px;">
+                                                @(m.IsHome ? "H" : "B")
+                                            </td>
+                                            <td>@m.Opponent</td>
+                                            <td class="text-end pe-2" style="width:80px; white-space:nowrap;">
+                                                @if (m.GoalsFor.HasValue)
+                                                {
+                                                    <strong>@m.GoalsFor–@m.GoalsAgainst</strong>
+                                                }
+                                            </td>
+                                            <td style="width:40px;">
+                                                @if (!string.IsNullOrEmpty(m.ResultLabel))
+                                                {
+                                                    <span class="badge @m.ResultBadgeClass">@m.ResultLabel</span>
+                                                }
+                                            </td>
+                                            <td style="width:30px;">
+                                                <a asp-action="MatchView"
+                                                   asp-route-id="@m.MatchID"
+                                                   asp-route-competitionId="@Model.CompetitionId"
+                                                   class="text-muted small">→</a>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+
+                @* Upcoming matches *@
+                @if (Model.UpcomingMatches.Any())
+                {
+                    <div class="card mb-4">
+                        <div class="card-header fw-semibold">Kommande matcher</div>
+                        <div class="card-body p-0">
+                            <table class="table table-sm mb-0">
+                                <tbody>
+                                    @foreach (var m in Model.UpcomingMatches)
+                                    {
+                                        <tr>
+                                            <td class="ps-3 text-muted small" style="width:110px; white-space:nowrap;">
+                                                @m.MatchDateTime.ToString("yyyy-MM-dd HH:mm")
+                                            </td>
+                                            <td class="small text-muted" style="width:32px;">
+                                                @(m.IsHome ? "H" : "B")
+                                            </td>
+                                            <td>@m.Opponent</td>
+                                            <td style="width:30px;">
+                                                <a asp-action="MatchView"
+                                                   asp-route-id="@m.MatchID"
+                                                   asp-route-competitionId="@Model.CompetitionId"
+                                                   class="text-muted small">→</a>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+
+                @* Home/Away stats *@
+                @if (Model.TotalPlayed > 0)
+                {
+                    <div class="card mb-4">
+                        <div class="card-header fw-semibold">Hemma / Borta</div>
+                        <div class="card-body">
+                            <div class="row text-center">
+                                <div class="col-6 border-end">
+                                    <div class="small text-muted mb-1">Hemma</div>
+                                    <div class="fw-bold">@Model.HomeWins-@Model.HomeDraws-@Model.HomeLosses</div>
+                                    <div class="small text-muted">@Model.HomePlayed matcher</div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="small text-muted mb-1">Borta</div>
+                                    <div class="fw-bold">@Model.AwayWins-@Model.AwayDraws-@Model.AwayLosses</div>
+                                    <div class="small text-muted">@Model.AwayPlayed matcher</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @* Right column *@
+            <div class="col-lg-6">
+                @* Hot players / Form *@
+                @if (Model.FormPlayers.Any())
+                {
+                    <div class="card mb-4">
+                        <div class="card-header fw-semibold">
+                            🔥 Heta spelare
+                            <span class="text-muted fw-normal small">(senaste @Model.FormMatchCount matcher)</span>
+                        </div>
+                        <div class="card-body p-0">
+                            <table class="table table-sm mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="ps-3">Spelare</th>
+                                        <th class="text-center">Mål</th>
+                                        <th class="text-center">Assist</th>
+                                        <th class="text-center fw-bold">P</th>
+                                        <th class="text-center text-muted small">S:P</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var fp in Model.FormPlayers)
+                                    {
+                                        <tr>
+                                            <td class="ps-3">
+                                                <a href="https://stats.innebandy.se/spelare/@fp.PlayerID" target="_blank" class="text-decoration-none text-dark fw-semibold">@fp.Name</a>
+                                            </td>
+                                            <td class="text-center">@fp.FormGoals</td>
+                                            <td class="text-center">@fp.FormAssists</td>
+                                            <td class="text-center"><strong>@fp.FormPoints</strong></td>
+                                            <td class="text-center text-muted small">@(fp.SeasonStats?.Points.ToString() ?? "–")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+
+                @* Top scorers (season) *@
+                @if (Model.TopPlayers.Any())
+                {
+                    <div class="card mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold">Poängligan</span>
+                            <a asp-action="TeamView"
+                               asp-route-competitionId="@Model.CompetitionId"
+                               asp-route-teamName="@Model.TeamName"
+                               class="btn btn-outline-secondary btn-sm">Alla spelare</a>
+                        </div>
+                        <div class="card-body p-0">
+                            <table class="table table-sm mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="ps-3">#</th>
+                                        <th>Spelare</th>
+                                        <th class="text-center">Fdd</th>
+                                        <th class="text-center">M</th>
+                                        <th class="text-center">Mål</th>
+                                        <th class="text-center">A</th>
+                                        <th class="text-center">P</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @{ var r = 1; }
+                                    @foreach (var p in Model.TopPlayers.Take(10))
+                                    {
+                                        <tr>
+                                            <td class="ps-3 text-muted">@r</td>
+                                            <td>
+                                                <a href="https://stats.innebandy.se/spelare/@p.PlayerID" target="_blank" class="text-decoration-none text-dark fw-semibold">@p.Name</a>
+                                                <button class="fav-inline fav-player-btn" data-id="@p.PlayerID" data-name="@p.Name" title="Favoritmarkera">☆</button>
+                                            </td>
+                                            <td class="text-center text-muted small">@(p.BirthYear > 0 ? p.BirthYear.ToString() : "")</td>
+                                            <td class="text-center">@p.Matches</td>
+                                            <td class="text-center">@p.Goals</td>
+                                            <td class="text-center">@p.Assists</td>
+                                            <td class="text-center"><strong>@p.Points</strong></td>
+                                        </tr>
+                                        r++;
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@* Collection modal *@
+<div class="modal fade" id="collectionModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title">Lägg till i samling</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="collectionList" class="mb-3"></div>
+                <div class="input-group input-group-sm">
+                    <input type="text" id="newCollectionName" class="form-control" placeholder="Ny samling..." />
+                    <button class="btn btn-primary" id="createCollectionBtn">Skapa</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            initFavTeamBtns('@Model.CompetitionId', @Json.Serialize(Model.CompetitionName));
+            initFavPlayerBtns();
+
+            var teamName = @Json.Serialize(Model.TeamName);
+            var competitionId = '@Model.CompetitionId';
+            var competitionName = @Json.Serialize(Model.CompetitionName);
+
+            // Collection modal
+            var modal = new bootstrap.Modal(document.getElementById('collectionModal'));
+            document.getElementById('addToCollectionBtn').addEventListener('click', function () {
+                renderCollectionList(teamName, competitionId, competitionName);
+                modal.show();
+            });
+
+            document.getElementById('createCollectionBtn').addEventListener('click', function () {
+                var name = document.getElementById('newCollectionName').value.trim();
+                if (!name) return;
+                var col = createCollection(name);
+                addTeamToCollection(col.id, teamName, competitionId, competitionName);
+                renderFavMenu();
+                document.getElementById('newCollectionName').value = '';
+                renderCollectionList(teamName, competitionId, competitionName);
+            });
+
+            function renderCollectionList(teamName, competitionId, competitionName) {
+                var cols = getCollections();
+                var el = document.getElementById('collectionList');
+                if (cols.length === 0) {
+                    el.innerHTML = '<p class="text-muted small mb-0">Inga samlingar ännu.</p>';
+                    return;
+                }
+                el.innerHTML = '';
+                cols.forEach(function (col) {
+                    var inCol = col.teams.some(t => t.name === teamName && t.competitionId == competitionId);
+                    var btn = document.createElement('button');
+                    btn.className = 'btn btn-sm w-100 mb-1 ' + (inCol ? 'btn-success' : 'btn-outline-secondary');
+                    btn.textContent = (inCol ? '✓ ' : '') + col.name;
+                    btn.addEventListener('click', function () {
+                        if (inCol) {
+                            removeTeamFromCollection(col.id, teamName, competitionId);
+                            inCol = false;
+                        } else {
+                            addTeamToCollection(col.id, teamName, competitionId, competitionName);
+                            inCol = true;
+                        }
+                        renderFavMenu();
+                        renderCollectionList(teamName, competitionId, competitionName);
+                    });
+                    el.appendChild(btn);
+                });
+            }
+        });
+    </script>
+}

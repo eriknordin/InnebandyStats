@@ -25,7 +25,7 @@
                 <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">InnebandyStats</a>
                 <div class="dropdown">
                     <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" id="favDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                        ★ Favoriter
+                        ★ Favoriter &amp; Samlingar
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end" id="favMenu" style="min-width:260px; max-height:400px; overflow-y:auto;">
                         <li><span class="dropdown-item-text text-muted small" id="favEmpty">Inga favoriter sparade</span></li>
@@ -90,6 +90,41 @@
     <script src="~/js/site.js" asp-append-version="true"></script>
 
     <script>
+        // ── Collections helpers ────────────────────────────────────────────────
+        const COLLECTIONS_KEY = 'innebandystats_collections';
+
+        function getCollections() {
+            try { return JSON.parse(localStorage.getItem(COLLECTIONS_KEY) || '[]'); } catch { return []; }
+        }
+        function saveCollections(arr) { localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(arr)); }
+
+        function createCollection(name) {
+            var cols = getCollections();
+            var col = { id: Date.now().toString(), name: name, teams: [] };
+            cols.push(col);
+            saveCollections(cols);
+            return col;
+        }
+        function addTeamToCollection(colId, teamName, competitionId, competitionName) {
+            var cols = getCollections();
+            var col = cols.find(c => c.id === colId);
+            if (!col) return;
+            if (!col.teams.some(t => t.name === teamName && t.competitionId == competitionId))
+                col.teams.push({ name: teamName, competitionId: String(competitionId), competitionName: competitionName });
+            saveCollections(cols);
+        }
+        function removeTeamFromCollection(colId, teamName, competitionId) {
+            var cols = getCollections();
+            var col = cols.find(c => c.id === colId);
+            if (!col) return;
+            col.teams = col.teams.filter(t => !(t.name === teamName && t.competitionId == competitionId));
+            saveCollections(cols);
+        }
+        function deleteCollection(colId) {
+            saveCollections(getCollections().filter(c => c.id !== colId));
+            renderFavMenu();
+        }
+
         // ── Favorites helpers ──────────────────────────────────────────────────
         const FAV_SERIES_KEY  = 'innebandystats_fav_series';
         const FAV_TEAMS_KEY   = 'innebandystats_fav_teams';
@@ -184,6 +219,26 @@
                     menu.appendChild(li);
                 });
             }
+
+            // Collections
+            var collections = getCollections().filter(c => c.teams.length > 0);
+            if (collections.length > 0) {
+                var hdrC = document.createElement('li');
+                hdrC.innerHTML = '<li><hr class="dropdown-divider"></li><span class="dropdown-item-text fw-semibold small text-uppercase text-muted">Samlingar</span>';
+                menu.appendChild(hdrC);
+                collections.forEach(function(col) {
+                    var li = document.createElement('li');
+                    var teamsHtml = col.teams.map(function(t) {
+                        return '<a class="dropdown-item ps-4 py-1 small" href="/Home/TeamAnalysis?competitionId=' + encodeURIComponent(t.competitionId) + '&teamName=' + encodeURIComponent(t.name) + '">' + escHtml(t.name) + '</a>';
+                    }).join('');
+                    li.innerHTML = '<span class="dropdown-item-text fw-semibold d-flex align-items-center">'
+                        + '<span class="flex-grow-1">📋 ' + escHtml(col.name) + '</span>'
+                        + '<button class="btn btn-sm fav-inline me-2" title="Ta bort samling" onclick="deleteCollection(\'' + col.id + '\')">✕</button>'
+                        + '</span>'
+                        + teamsHtml;
+                    menu.appendChild(li);
+                });
+            }
         }
 
         function removeFavSeries(id, btn) {
@@ -218,8 +273,11 @@
             if (!container || !wrapper) return;
             var series = getFavs(FAV_SERIES_KEY);
             var teams = getFavs(FAV_TEAMS_KEY);
+            var collections = getCollections().filter(c => c.teams.length > 0);
             container.innerHTML = '';
-            if (series.length === 0 && teams.length === 0) { wrapper.style.display = 'none'; return; }
+            if (series.length === 0 && teams.length === 0 && collections.length === 0) {
+                wrapper.style.display = 'none'; return;
+            }
             wrapper.style.display = '';
             series.forEach(function(s) {
                 var a = document.createElement('a');
@@ -230,10 +288,23 @@
             });
             teams.forEach(function(t) {
                 var a = document.createElement('a');
-                a.href = '/Home/TeamView?competitionId=' + encodeURIComponent(t.competitionId) + '&teamName=' + encodeURIComponent(t.name);
+                a.href = '/Home/TeamAnalysis?competitionId=' + encodeURIComponent(t.competitionId) + '&teamName=' + encodeURIComponent(t.name);
                 a.className = 'badge bg-secondary text-decoration-none';
                 a.textContent = t.name;
                 container.appendChild(a);
+            });
+            collections.forEach(function(col) {
+                var span = document.createElement('span');
+                span.className = 'badge bg-dark text-decoration-none me-0';
+                span.textContent = '📋 ' + col.name + ':';
+                container.appendChild(span);
+                col.teams.forEach(function(t) {
+                    var a = document.createElement('a');
+                    a.href = '/Home/TeamAnalysis?competitionId=' + encodeURIComponent(t.competitionId) + '&teamName=' + encodeURIComponent(t.name);
+                    a.className = 'badge bg-secondary text-decoration-none';
+                    a.textContent = t.name;
+                    container.appendChild(a);
+                });
             });
         }
 

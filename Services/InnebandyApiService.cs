@@ -61,6 +61,10 @@ public class InnebandyApiService
 
     public async Task<List<Match>> GetMatchesAsync(int competitionId)
     {
+        var cacheKey = $"matches_{competitionId}";
+        if (_cache.TryGetValue(cacheKey, out List<Match>? cachedMatches) && cachedMatches != null)
+            return cachedMatches;
+
         var request = await CreateAuthorizedRequest(
             $"https://api.innebandy.se/v2/api/competitions/{competitionId}/matches");
 
@@ -68,11 +72,17 @@ public class InnebandyApiService
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync();
-        return JsonSerializer.Deserialize<List<Match>>(json, JsonOptions) ?? new List<Match>();
+        var matches = JsonSerializer.Deserialize<List<Match>>(json, JsonOptions) ?? new List<Match>();
+        _cache.Set(cacheKey, matches, TimeSpan.FromMinutes(5));
+        return matches;
     }
 
     public async Task<Match?> GetMatchDetailsAsync(int matchId)
     {
+        var cacheKey = $"matchdetails_{matchId}";
+        if (_cache.TryGetValue(cacheKey, out Match? cachedDetail) && cachedDetail != null)
+            return cachedDetail;
+
         var request = await CreateAuthorizedRequest(
             $"https://api.innebandy.se/v2/api/matches/{matchId}");
 
@@ -80,7 +90,10 @@ public class InnebandyApiService
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync();
-        return JsonSerializer.Deserialize<Match>(json, JsonOptions);
+        var match = JsonSerializer.Deserialize<Match>(json, JsonOptions);
+        if (match != null)
+            _cache.Set(cacheKey, match, TimeSpan.FromMinutes(30));
+        return match;
     }
 
     public async Task<Lineup?> GetLineupAsync(int matchId)
@@ -444,6 +457,146 @@ public class InnebandyApiService
             .ToList();
 
         var result = (matchInfo, homeStandings, awayStandings);
+        _cache.Set(cacheKey, result, TimeSpan.FromMinutes(10));
+        return result;
+    }
+
+    public async Task<TeamAnalysisViewModel> GetTeamAnalysisAsync(int competitionId, string teamName)
+    {
+        var cacheKey = $"teamanalysis_{competitionId}_{teamName}";
+        if (_cache.TryGetValue(cacheKey, out TeamAnalysisViewModel? cachedAnalysis) && cachedAnalysis != null)
+            return cachedAnalysis;
+
+        // Parallel fetch of base data (all cached individually)
+        var matchesTask = GetMatchesAsync(competitionId);
+        var standingsTask = GetStandingsAsync(competitionId);
+        var tableTask = GetSeriesTableAsync(competitionId);
+        var compNameTask = GetCompetitionNameAsync(competitionId);
+        await Task.WhenAll(matchesTask, standingsTask, tableTask, compNameTask);
+
+        var allMatches = await matchesTask;
+        var allStandings = await standingsTask;
+        var seriesTable = await tableTask;
+        var compName = await compNameTask;
+
+        // Filter and sort team's matches
+        var teamMatches = allMatches
+            .Where(m => m.HomeTeam.Trim() == teamName || m.AwayTeam.Trim() == teamName)
+            .OrderByDescending(m => m.MatchDateTime)
+            .ToList();
+
+        var played = teamMatches.Where(m => m.MatchStatus == 4 && m.GoalsHomeTeam.HasValue).ToList();
+        var upcoming = teamMatches.Where(m => m.MatchStatus != 4).OrderBy(m => m.MatchDateTime).ToList();
+
+        // Table position
+        var tableEntry = seriesTable.FirstOrDefault(t => t.TeamName == teamName);
+        var tableRank = seriesTable.FindIndex(t => t.TeamName == teamName) + 1;
+
+        // Home/away stats, averages, streaks
+        int homePlayed = 0, homeWins = 0, homeDraws = 0, homeLosses = 0;
+        int awayPlayed = 0, awayWins = 0, awayDraws = 0, awayLosses = 0;
+        int totalGF = 0, totalGA = 0;
+        int unbeatenStreak = 0, winStreak = 0;
+        bool unbeatenBroken = false, winBroken = false;
+
+        foreach (var m in played)
+        {
+            bool isHome = m.HomeTeam.Trim() == teamName;
+            int gf = isHome ? m.GoalsHomeTeam!.Value : m.GoalsAwayTeam!.Value;
+            int ga = isHome ? m.GoalsAwayTeam!.Value : m.GoalsHomeTeam!.Value;
+            totalGF += gf; totalGA += ga;
+            bool won = gf > ga, drew = gf == ga;
+
+            if (isHome) { homePlayed++; if (won) homeWins++; else if (drew) homeDraws++; else homeLosses++; }
+            else { awayPlayed++; if (won) awayWins++; else if (drew) awayDraws++; else awayLosses++; }
+
+            if (!unbeatenBroken) { if (gf >= ga) unbeatenStreak++; else unbeatenBroken = true; }
+            if (!winBroken) { if (won) winStreak++; else winBroken = true; }
+        }
+
+        // Form players: last 3 match events
+        const int formCount = 3;
+        var lastPlayed = played.Take(formCount).ToList();
+        var formDict = new Dictionary<int, FormPlayer>();
+
+        if (lastPlayed.Any())
+        {
+            var detailTasks = lastPlayed.Select(m => GetMatchDetailsAsync(m.MatchID));
+            var details = await Task.WhenAll(detailTasks);
+
+            foreach (var detail in details.Where(d => d?.Events != null))
+            {
+                bool detailIsHome = detail!.HomeTeam.Trim() == teamName;
+                foreach (var evt in detail.Events!)
+                {
+                    if (evt.IsHomeTeam != detailIsHome) continue;
+                    if (evt.MatchEventTypeID == 1 && evt.PlayerID > 0)
+                    {
+                        if (!formDict.TryGetValue(evt.PlayerID, out var fp))
+                            formDict[evt.PlayerID] = fp = new FormPlayer { PlayerID = evt.PlayerID, Name = evt.PlayerName };
+                        fp.FormGoals++;
+
+                        if (evt.PlayerAssistID > 0)
+                        {
+                            if (!formDict.TryGetValue(evt.PlayerAssistID, out var fa))
+                                formDict[evt.PlayerAssistID] = fa = new FormPlayer { PlayerID = evt.PlayerAssistID, Name = evt.PlayerAssistName };
+                            fa.FormAssists++;
+                        }
+                    }
+                }
+            }
+        }
+
+        var seasonLookup = allStandings.Where(p => p.Team == teamName).ToDictionary(p => p.PlayerID);
+        foreach (var fp in formDict.Values)
+            fp.SeasonStats = seasonLookup.TryGetValue(fp.PlayerID, out var sp) ? sp : null;
+
+        var formPlayers = formDict.Values
+            .OrderByDescending(fp => fp.FormPoints).ThenByDescending(fp => fp.FormGoals)
+            .ToList();
+
+        // Build match result lists
+        static TeamMatchResult ToResult(Match m, string teamName) {
+            bool isHome = m.HomeTeam.Trim() == teamName;
+            return new TeamMatchResult {
+                MatchID = m.MatchID,
+                MatchDateTime = m.MatchDateTime,
+                Opponent = isHome ? m.AwayTeam.Trim() : m.HomeTeam.Trim(),
+                IsHome = isHome,
+                GoalsFor = isHome ? m.GoalsHomeTeam : m.GoalsAwayTeam,
+                GoalsAgainst = isHome ? m.GoalsAwayTeam : m.GoalsHomeTeam,
+                MatchStatus = m.MatchStatus,
+                RoundName = m.RoundName,
+                Round = m.Round
+            };
+        }
+
+        var topPlayers = allStandings
+            .Where(p => p.Team == teamName)
+            .OrderByDescending(p => p.Points).ThenByDescending(p => p.Goals).ThenBy(p => p.Name)
+            .ToList();
+
+        int totalPlayed = homePlayed + awayPlayed;
+        var result = new TeamAnalysisViewModel
+        {
+            CompetitionId = competitionId,
+            CompetitionName = compName,
+            TeamName = teamName,
+            TableRank = tableRank,
+            TableEntry = tableEntry,
+            RecentMatches = played.Take(5).Select(m => ToResult(m, teamName)).ToList(),
+            UpcomingMatches = upcoming.Take(3).Select(m => ToResult(m, teamName)).ToList(),
+            TopPlayers = topPlayers,
+            FormPlayers = formPlayers,
+            AvgGoalsFor = totalPlayed > 0 ? Math.Round((double)totalGF / totalPlayed, 1) : 0,
+            AvgGoalsAgainst = totalPlayed > 0 ? Math.Round((double)totalGA / totalPlayed, 1) : 0,
+            HomePlayed = homePlayed, HomeWins = homeWins, HomeDraws = homeDraws, HomeLosses = homeLosses,
+            AwayPlayed = awayPlayed, AwayWins = awayWins, AwayDraws = awayDraws, AwayLosses = awayLosses,
+            CurrentUnbeatenStreak = unbeatenStreak,
+            CurrentWinStreak = winStreak,
+            FormMatchCount = formCount
+        };
+
         _cache.Set(cacheKey, result, TimeSpan.FromMinutes(10));
         return result;
     }

@@ -33,13 +33,17 @@
         </ol>
     </nav>
 
-    <h1 class="mb-1">
-        @Model.TeamName
-        <button class="btn btn-sm ms-2 fav-btn fav-team-btn"
+    <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+        <h1 class="mb-0">@Model.TeamName</h1>
+        <button class="btn fav-btn fav-team-btn"
                 data-name="@Model.TeamName"
                 data-competition-id="@Model.CompetitionId"
                 title="Favoritmarkera laget">☆</button>
-    </h1>
+        <a asp-action="TeamAnalysis"
+           asp-route-competitionId="@Model.CompetitionId"
+           asp-route-teamName="@Model.TeamName"
+           class="btn btn-outline-primary btn-sm">📊 Analysera</a>
+    </div>
     <p class="text-muted mb-4">@Model.CompetitionName</p>
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))

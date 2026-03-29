@@ -67,6 +67,10 @@
                                         data-name="@team.TeamName"
                                         data-competition-id="@Model.CompetitionId"
                                         title="Favoritmarkera lag">☆</button>
+                                <a asp-action="TeamAnalysis"
+                                   asp-route-competitionId="@Model.CompetitionId"
+                                   asp-route-teamName="@team.TeamName"
+                                   class="text-muted small ms-1" title="Analysera lag">📊</a>
                             </td>
                             <td class="text-center">@team.Played</td>
                             <td class="text-center">@team.Wins</td>
