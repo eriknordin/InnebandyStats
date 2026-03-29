@@ -1,0 +1,258 @@
+@{
+    ViewData["Title"] = "Samlingar";
+}
+
+<div class="container mt-4">
+    <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
+        <h1 class="mb-0">Samlingar</h1>
+        <button class="btn btn-outline-primary btn-sm" id="newCollectionTopBtn">+ Ny samling</button>
+    </div>
+
+    <div id="noCollections" class="alert alert-info" style="display:none;">
+        Du har inga samlingar ännu. Gå till ett lags analysida och klicka <strong>+ Samling</strong> för att komma igång.
+    </div>
+
+    <!-- Collection tabs -->
+    <ul class="nav nav-tabs mb-4" id="collectionTabs" style="display:none;"></ul>
+
+    <!-- Active collection header -->
+    <div id="collectionHeader" class="d-flex align-items-center gap-2 mb-3 d-none">
+        <span id="activeCollectionName" class="fw-semibold fs-5"></span>
+        <button class="btn btn-outline-secondary btn-sm" id="renameCollectionBtn">Byt namn</button>
+        <button class="btn btn-outline-danger btn-sm" id="deleteCollectionBtn">Ta bort</button>
+    </div>
+
+    {{-- Team cards grid --}}
+    <div id="teamCards" class="row g-3"></div>
+</div>
+
+{{-- Rename modal --}}
+<div class="modal fade" id="renameModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title">Byt namn</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="renameInput" class="form-control" />
+                <button class="btn btn-primary btn-sm mt-2 w-100" id="renameSaveBtn">Spara</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    let activeColId = null;
+
+    function render() {
+        const cols = getCollections();
+        const tabs = document.getElementById('collectionTabs');
+        const cards = document.getElementById('teamCards');
+        const noColEl = document.getElementById('noCollections');
+        const header = document.getElementById('collectionHeader');
+
+        if (cols.length === 0) {
+            noColEl.style.display = '';
+            tabs.style.display = 'none';
+            header.classList.add('d-none');
+            cards.innerHTML = '';
+            return;
+        }
+        noColEl.style.display = 'none';
+        tabs.style.display = '';
+
+        // Default to first collection or keep active if still exists
+        if (!activeColId || !cols.find(c => c.id === activeColId))
+            activeColId = cols[0].id;
+
+        // Tabs
+        tabs.innerHTML = '';
+        cols.forEach(col => {
+            const li = document.createElement('li');
+            li.className = 'nav-item';
+            const a = document.createElement('a');
+            a.className = 'nav-link' + (col.id === activeColId ? ' active' : '');
+            a.href = '#';
+            a.textContent = col.name + ' (' + col.teams.length + ')';
+            a.addEventListener('click', e => { e.preventDefault(); activeColId = col.id; render(); });
+            li.appendChild(a);
+            tabs.appendChild(li);
+        });
+
+        // Active collection header
+        const activeCol = cols.find(c => c.id === activeColId);
+        document.getElementById('activeCollectionName').textContent = activeCol.name;
+        header.classList.remove('d-none');
+
+        // Load team cards
+        cards.innerHTML = '';
+        if (activeCol.teams.length === 0) {
+            cards.innerHTML = '<div class="col"><p class="text-muted">Inga lag i denna samling ännu.</p></div>';
+            return;
+        }
+        activeCol.teams.forEach(t => {
+            const col = document.createElement('div');
+            col.className = 'col-sm-6 col-lg-4';
+            col.innerHTML = teamCardSkeleton(t);
+            cards.appendChild(col);
+            loadTeamCard(col, t.competitionId, t.name, activeColId);
+        });
+    }
+
+    function teamCardSkeleton(t) {
+        return `<div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center py-2">
+                <span class="fw-semibold">${escHtml(t.name)}</span>
+                <button class="btn btn-sm btn-outline-danger border-0 p-0 px-1 remove-team-btn"
+                        data-name="${escHtml(t.name)}" data-cid="${t.competitionId}"
+                        title="Ta bort ur samling">✕</button>
+            </div>
+            <div class="card-body text-center py-4">
+                <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
+                <div class="text-muted small mt-2">Laddar...</div>
+            </div>
+        </div>`;
+    }
+
+    async function loadTeamCard(colEl, competitionId, teamName, colId) {
+        try {
+            const res = await fetch(`/Home/GetTeamSummary?competitionId=${encodeURIComponent(competitionId)}&teamName=${encodeURIComponent(teamName)}`);
+            const d = await res.json();
+
+            const formDots = (d.recentResults || []).map(r => {
+                const cls = r === 'V' ? 'bg-success' : r === 'O' ? 'bg-warning' : r === 'F' ? 'bg-danger' : 'bg-secondary';
+                return `<span class="badge ${cls} p-1" style="width:22px;">${r || '–'}</span>`;
+            }).join('');
+
+            const formRows = (d.formPlayers || []).map(p =>
+                `<li class="list-group-item list-group-item-action d-flex justify-content-between py-1 px-3 small">
+                    <a href="https://stats.innebandy.se/spelare/${p.playerId}" target="_blank" class="text-decoration-none text-dark">${escHtml(p.name)}</a>
+                    <span class="text-muted">${p.formGoals}+${p.formAssists}=<strong>${p.formPoints}</strong></span>
+                </li>`
+            ).join('');
+
+            const streakBadge = d.winStreak > 1
+                ? `<span class="badge bg-success ms-2">${d.winStreak} raka vinster 🔥</span>`
+                : d.unbeatenStreak > 1
+                ? `<span class="badge bg-warning text-dark ms-2">${d.unbeatenStreak} obesegrade</span>`
+                : '';
+
+            const competitionLink = `<a href="/Home/SeriesTable?id=${d.competitionId}" class="text-muted small text-decoration-none">${escHtml(d.competitionName)}</a>`;
+
+            colEl.querySelector('.card').innerHTML = `
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <div>
+                        <a href="/Home/TeamAnalysis?competitionId=${d.competitionId}&teamName=${encodeURIComponent(d.teamName)}"
+                           class="fw-semibold text-decoration-none text-dark">${escHtml(d.teamName)}</a>
+                        ${d.tableRank > 0 ? `<span class="badge bg-primary ms-1">#${d.tableRank}</span>` : ''}
+                        ${streakBadge}
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger border-0 p-0 px-1 remove-team-btn"
+                            data-name="${escHtml(d.teamName)}" data-cid="${d.competitionId}"
+                            title="Ta bort ur samling">✕</button>
+                </div>
+                <div class="card-body p-0">
+                    <div class="d-flex justify-content-around text-center border-bottom py-2">
+                        <div>
+                            <div class="fw-bold">${d.wins}-${d.draws}-${d.losses}</div>
+                            <div class="text-muted" style="font-size:0.7rem;">V-O-F</div>
+                        </div>
+                        <div>
+                            <div class="fw-bold">${d.points}</div>
+                            <div class="text-muted" style="font-size:0.7rem;">Poäng</div>
+                        </div>
+                        <div>
+                            <div class="fw-bold">${d.goalsFor}–${d.goalsAgainst}</div>
+                            <div class="text-muted" style="font-size:0.7rem;">Mål</div>
+                        </div>
+                        <div>
+                            <div class="fw-bold">${d.avgGoalsFor.toFixed(1)}</div>
+                            <div class="text-muted" style="font-size:0.7rem;">Snitt/m</div>
+                        </div>
+                    </div>
+
+                    ${formDots ? `<div class="px-3 pt-2 pb-1">
+                        <div class="small text-muted mb-1">Form</div>
+                        <div class="d-flex gap-1">${formDots}</div>
+                    </div>` : ''}
+
+                    ${d.topScorer ? `<div class="px-3 pt-1 pb-1 small">
+                        <span class="text-muted">Toppscorar: </span>
+                        <a href="https://stats.innebandy.se/spelare/${d.topScorer.playerId}" target="_blank"
+                           class="text-decoration-none text-dark fw-semibold">${escHtml(d.topScorer.name)}</a>
+                        <span class="text-muted">${d.topScorer.goals}+${d.topScorer.assists}=${d.topScorer.points}p</span>
+                    </div>` : ''}
+
+                    ${formRows ? `<div class="px-3 pt-1 pb-1 small text-muted">Heta spelare (senaste 3):</div>
+                    <ul class="list-group list-group-flush">${formRows}</ul>` : ''}
+                </div>
+                <div class="card-footer py-1 text-end">
+                    ${competitionLink}
+                    <a href="/Home/TeamAnalysis?competitionId=${d.competitionId}&teamName=${encodeURIComponent(d.teamName)}"
+                       class="btn btn-sm btn-outline-secondary ms-2 py-0">📊 Analys</a>
+                </div>`;
+
+            // Remove-team button
+            colEl.querySelector('.remove-team-btn').addEventListener('click', function() {
+                removeTeamFromCollection(colId, d.teamName, d.competitionId);
+                renderFavMenu();
+                render();
+            });
+        } catch (e) {
+            colEl.querySelector('.card-body').innerHTML =
+                `<p class="text-danger small px-3">Kunde inte ladda data.</p>`;
+        }
+    }
+
+    // Delegated remove for skeleton cards (before data loads)
+    document.getElementById('teamCards').addEventListener('click', function(e) {
+        const btn = e.target.closest('.remove-team-btn');
+        if (!btn) return;
+        removeTeamFromCollection(activeColId, btn.dataset.name, btn.dataset.cid);
+        renderFavMenu();
+        render();
+    });
+
+    // Delete collection
+    document.getElementById('deleteCollectionBtn').addEventListener('click', function() {
+        if (!confirm('Ta bort hela samlingen?')) return;
+        deleteCollection(activeColId);
+        activeColId = null;
+        render();
+    });
+
+    // Rename
+    const renameModal = new bootstrap.Modal(document.getElementById('renameModal'));
+    document.getElementById('renameCollectionBtn').addEventListener('click', function() {
+        const col = getCollections().find(c => c.id === activeColId);
+        if (col) document.getElementById('renameInput').value = col.name;
+        renameModal.show();
+    });
+    document.getElementById('renameSaveBtn').addEventListener('click', function() {
+        const name = document.getElementById('renameInput').value.trim();
+        if (!name) return;
+        const cols = getCollections();
+        const col = cols.find(c => c.id === activeColId);
+        if (col) { col.name = name; saveCollections(cols); }
+        renameModal.hide();
+        renderFavMenu();
+        render();
+    });
+
+    // New collection from top button
+    document.getElementById('newCollectionTopBtn').addEventListener('click', function() {
+        const name = prompt('Namn på ny samling:');
+        if (!name) return;
+        const col = createCollection(name);
+        activeColId = col.id;
+        renderFavMenu();
+        render();
+    });
+
+    render();
+});
+</script>
+}
