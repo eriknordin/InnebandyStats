@@ -1,0 +1,152 @@
+@{
+    ViewData["Title"] = "Lagsökning";
+}
+
+<div class="container mt-4">
+    <h1 class="mb-3">Lagsökning</h1>
+    <p class="text-muted mb-3">Sök efter ett lag för att se vilka serier det spelar i.</p>
+
+    <div class="row g-2 mb-4">
+        <div class="col-md-8">
+            <input type="text" class="form-control" id="teamSearchInput"
+                   placeholder="Ange lagnamn (minst 2 tecken)..." autocomplete="off" autofocus />
+        </div>
+        <div class="col-md-2">
+            <button class="btn btn-primary w-100" id="teamSearchBtn">Sök</button>
+        </div>
+    </div>
+
+    <div id="searchSpinner" class="text-center py-4" style="display:none;">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="text-muted mt-2">Söker igenom serier...</p>
+    </div>
+
+    <div id="searchError" class="alert alert-danger" style="display:none;"></div>
+
+    <div id="searchResults" style="display:none;">
+        <h5 class="mb-3" id="resultCount"></h5>
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Lag</th>
+                        <th>Serie</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="resultBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="noResults" class="text-center py-4" style="display:none;">
+        <p class="text-muted">Inga lag hittades. Kontrollera att rätt säsong och förbund är valda ovan.</p>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const input = document.getElementById('teamSearchInput');
+        const btn = document.getElementById('teamSearchBtn');
+        const spinner = document.getElementById('searchSpinner');
+        const errorDiv = document.getElementById('searchError');
+        const resultsDiv = document.getElementById('searchResults');
+        const noResults = document.getElementById('noResults');
+        const resultCount = document.getElementById('resultCount');
+        const resultBody = document.getElementById('resultBody');
+
+        function getSeasonId() {
+            const sel = document.getElementById('seasonSelect');
+            return sel ? sel.value : localStorage.getItem('selectedSeasonId') || '43';
+        }
+        function getFederationId() {
+            const sel = document.getElementById('federationSelect');
+            return sel ? sel.value : localStorage.getItem('selectedFederationId') || '8';
+        }
+
+        async function doSearch() {
+            const query = input.value.trim();
+            if (query.length < 2) {
+                errorDiv.textContent = 'Ange minst 2 tecken.';
+                errorDiv.style.display = '';
+                return;
+            }
+
+            errorDiv.style.display = 'none';
+            resultsDiv.style.display = 'none';
+            noResults.style.display = 'none';
+            spinner.style.display = '';
+
+            try {
+                const seasonId = getSeasonId();
+                const federationId = getFederationId();
+                const res = await fetch(`/Home/SearchTeam?query=${encodeURIComponent(query)}&seasonId=${seasonId}&federationId=${federationId}`);
+                if (!res.ok) throw new Error('Servern svarade med fel');
+                const data = await res.json();
+
+                spinner.style.display = 'none';
+
+                if (data.length === 0) {
+                    noResults.style.display = '';
+                    return;
+                }
+
+                // Gruppera per lagnamn
+                const grouped = {};
+                data.forEach(r => {
+                    if (!grouped[r.teamName]) grouped[r.teamName] = [];
+                    grouped[r.teamName].push(r);
+                });
+
+                const teamNames = Object.keys(grouped).sort();
+                const totalSeries = data.length;
+                resultCount.textContent = `${teamNames.length} lag i ${totalSeries} serie${totalSeries !== 1 ? 'r' : ''}`;
+
+                resultBody.innerHTML = '';
+                teamNames.forEach(teamName => {
+                    const entries = grouped[teamName];
+                    entries.forEach((r, i) => {
+                        const tr = document.createElement('tr');
+                        if (i === 0) {
+                            const tdTeam = document.createElement('td');
+                            tdTeam.className = 'fw-semibold';
+                            if (entries.length > 1) {
+                                tdTeam.rowSpan = entries.length;
+                            }
+                            tdTeam.textContent = r.teamName;
+                            tr.appendChild(tdTeam);
+                        }
+                        const tdSeries = document.createElement('td');
+                        tdSeries.textContent = r.competitionName;
+                        tr.appendChild(tdSeries);
+
+                        const tdLinks = document.createElement('td');
+                        tdLinks.className = 'text-end text-nowrap';
+                        tdLinks.innerHTML =
+                            '<a href="/Home/Standings?id=' + r.competitionId + '&team=' + encodeURIComponent(r.teamName) + '" class="btn btn-sm btn-outline-primary me-1" title="Poängliga">Poängliga</a>' +
+                            '<a href="/Home/TeamView?competitionId=' + r.competitionId + '&teamName=' + encodeURIComponent(r.teamName) + '" class="btn btn-sm btn-outline-secondary me-1" title="Lagvy">Lagvy</a>' +
+                            '<a href="/Home/TeamAnalysis?competitionId=' + r.competitionId + '&teamName=' + encodeURIComponent(r.teamName) + '" class="btn btn-sm btn-outline-success" title="Analys">Analys</a>';
+                        tr.appendChild(tdLinks);
+                        resultBody.appendChild(tr);
+                    });
+                });
+
+                resultsDiv.style.display = '';
+            } catch (e) {
+                spinner.style.display = 'none';
+                errorDiv.textContent = 'Sökningen misslyckades: ' + e.message;
+                errorDiv.style.display = '';
+            }
+        }
+
+        btn.addEventListener('click', doSearch);
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                doSearch();
+            }
+        });
+    });
+</script>
+}

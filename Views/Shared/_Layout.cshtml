@@ -22,6 +22,8 @@
         <nav class="navbar navbar-dark bg-dark border-bottom box-shadow">
             <div class="container-fluid">
                 <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">InnebandyStats</a>
+                <div class="d-flex align-items-center gap-2">
+                <a class="btn btn-outline-light btn-sm" asp-controller="Home" asp-action="TeamSearch">Lagsökning</a>
                 <div class="dropdown">
                     <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" id="favDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                         ★ Favoriter &amp; Samlingar
@@ -29,6 +31,7 @@
                     <ul class="dropdown-menu dropdown-menu-end" id="favMenu" style="min-width:260px; max-height:400px; overflow-y:auto;">
                         <li><span class="dropdown-item-text text-muted small" id="favEmpty">Inga favoriter sparade</span></li>
                     </ul>
+                </div>
                 </div>
             </div>
         </nav>
