@@ -165,7 +165,8 @@ public class InnebandyApiService
         }
 
         // 3. Bygg spelarinfo från lineups (ålder, födelseår, lag, matchdeltagande)
-        var playerStats = new Dictionary<int, PlayerStanding>();
+        // Nyckla på (PlayerID, Team) för att separera spelare som spelar i flera lag
+        var playerStats = new Dictionary<(int PlayerId, string Team), PlayerStanding>();
 
         foreach (var lineup in lineups)
         {
@@ -174,18 +175,18 @@ public class InnebandyApiService
 
             foreach (var p in lineup.HomeTeamPlayers)
             {
-                EnsurePlayer(playerStats, p.PlayerID, p.Name, homeTeamName);
-                playerStats[p.PlayerID].Matches++;
-                if (p.Age > 0) playerStats[p.PlayerID].Age = p.Age;
-                if (p.BirthYear > 0) playerStats[p.PlayerID].BirthYear = p.BirthYear;
+                EnsurePlayerByTeam(playerStats, p.PlayerID, p.Name, homeTeamName);
+                playerStats[(p.PlayerID, homeTeamName)].Matches++;
+                if (p.Age > 0) playerStats[(p.PlayerID, homeTeamName)].Age = p.Age;
+                if (p.BirthYear > 0) playerStats[(p.PlayerID, homeTeamName)].BirthYear = p.BirthYear;
             }
 
             foreach (var p in lineup.AwayTeamPlayers)
             {
-                EnsurePlayer(playerStats, p.PlayerID, p.Name, awayTeamName);
-                playerStats[p.PlayerID].Matches++;
-                if (p.Age > 0) playerStats[p.PlayerID].Age = p.Age;
-                if (p.BirthYear > 0) playerStats[p.PlayerID].BirthYear = p.BirthYear;
+                EnsurePlayerByTeam(playerStats, p.PlayerID, p.Name, awayTeamName);
+                playerStats[(p.PlayerID, awayTeamName)].Matches++;
+                if (p.Age > 0) playerStats[(p.PlayerID, awayTeamName)].Age = p.Age;
+                if (p.BirthYear > 0) playerStats[(p.PlayerID, awayTeamName)].BirthYear = p.BirthYear;
             }
         }
 
@@ -200,14 +201,14 @@ public class InnebandyApiService
                 if (evt.MatchEventTypeID == 1 && evt.PlayerID > 0)
                 {
                     var teamName = evt.MatchTeamName?.Trim() ?? "";
-                    EnsurePlayer(playerStats, evt.PlayerID, evt.PlayerName, teamName);
-                    playerStats[evt.PlayerID].Goals++;
+                    EnsurePlayerByTeam(playerStats, evt.PlayerID, evt.PlayerName, teamName);
+                    playerStats[(evt.PlayerID, teamName)].Goals++;
 
                     // Assist
                     if (evt.PlayerAssistID > 0)
                     {
-                        EnsurePlayer(playerStats, evt.PlayerAssistID, evt.PlayerAssistName, teamName);
-                        playerStats[evt.PlayerAssistID].Assists++;
+                        EnsurePlayerByTeam(playerStats, evt.PlayerAssistID, evt.PlayerAssistName, teamName);
+                        playerStats[(evt.PlayerAssistID, teamName)].Assists++;
                     }
                 }
 
@@ -215,14 +216,14 @@ public class InnebandyApiService
                 if (evt.MatchEventTypeID == 2 && evt.PlayerID > 0)
                 {
                     var teamName = evt.MatchTeamName?.Trim() ?? "";
-                    EnsurePlayer(playerStats, evt.PlayerID, evt.PlayerName, teamName);
-                    playerStats[evt.PlayerID].PenaltyMinutes += 2;
+                    EnsurePlayerByTeam(playerStats, evt.PlayerID, evt.PlayerName, teamName);
+                    playerStats[(evt.PlayerID, teamName)].PenaltyMinutes += 2;
                 }
             }
         }
 
         // 5. Hämta födelseår från player-API (lineups saknar BirthYear)
-        var playerIds = playerStats.Keys.ToList();
+        var playerIds = playerStats.Keys.Select(k => k.PlayerId).Distinct().ToList();
         _logger.LogInformation("Hämtar spelardetaljer för {Count} spelare...", playerIds.Count);
 
         foreach (var batch in playerIds.Chunk(10))
@@ -232,12 +233,13 @@ public class InnebandyApiService
 
             foreach (var player in results.Where(p => p != null))
             {
-                if (playerStats.ContainsKey(player!.PlayerID))
+                // Uppdatera alla poster för denna spelare (kan finnas i flera lag)
+                foreach (var key in playerStats.Keys.Where(k => k.PlayerId == player!.PlayerID))
                 {
-                    if (player.Age > 0) playerStats[player.PlayerID].Age = player.Age;
-                    if (player.BirthYear > 0) playerStats[player.PlayerID].BirthYear = player.BirthYear;
+                    if (player!.Age > 0) playerStats[key].Age = player.Age;
+                    if (player.BirthYear > 0) playerStats[key].BirthYear = player.BirthYear;
                     if (!string.IsNullOrEmpty(player.Name))
-                        playerStats[player.PlayerID].Name = player.Name;
+                        playerStats[key].Name = player.Name;
                 }
             }
         }
@@ -601,11 +603,77 @@ public class InnebandyApiService
         return result;
     }
 
+    public async Task<List<TeamSearchResult>> SearchTeamAsync(string query, int seasonId, int federationId)
+    {
+        var cacheKey = $"teamsearch_{seasonId}_{federationId}_{query.ToLower().Trim()}";
+        if (_cache.TryGetValue(cacheKey, out List<TeamSearchResult>? cached) && cached != null)
+            return cached;
+
+        var competitions = await GetCompetitionsAsync(seasonId, federationId);
+        var results = new List<TeamSearchResult>();
+        var lowerQuery = query.ToLower().Trim();
+
+        // Hämta matcher för alla tävlingar parallellt i batchar
+        foreach (var batch in competitions.Chunk(10))
+        {
+            var tasks = batch.Select(async c =>
+            {
+                try
+                {
+                    var matches = await GetMatchesAsync(c.CompetitionID);
+                    var teams = matches
+                        .SelectMany(m => new[]
+                        {
+                            new { Id = m.HomeTeamID, Name = m.HomeTeam.Trim() },
+                            new { Id = m.AwayTeamID, Name = m.AwayTeam.Trim() }
+                        })
+                        .Where(t => !string.IsNullOrEmpty(t.Name))
+                        .DistinctBy(t => t.Id)
+                        .Where(t => t.Name.ToLower().Contains(lowerQuery))
+                        .ToList();
+
+                    return teams.Select(t => new TeamSearchResult
+                    {
+                        TeamName = t.Name,
+                        TeamID = t.Id,
+                        CompetitionID = c.CompetitionID,
+                        CompetitionName = c.Name
+                    }).ToList();
+                }
+                catch
+                {
+                    return new List<TeamSearchResult>();
+                }
+            });
+
+            var batchResults = await Task.WhenAll(tasks);
+            results.AddRange(batchResults.SelectMany(r => r));
+        }
+
+        results = results.OrderBy(r => r.TeamName).ThenBy(r => r.CompetitionName).ToList();
+        _cache.Set(cacheKey, results, TimeSpan.FromMinutes(10));
+        return results;
+    }
+
     private static void EnsurePlayer(Dictionary<int, PlayerStanding> dict, int playerId, string name, string team)
     {
         if (!dict.ContainsKey(playerId))
         {
             dict[playerId] = new PlayerStanding
+            {
+                PlayerID = playerId,
+                Name = name,
+                Team = team
+            };
+        }
+    }
+
+    private static void EnsurePlayerByTeam(Dictionary<(int PlayerId, string Team), PlayerStanding> dict, int playerId, string name, string team)
+    {
+        var key = (playerId, team);
+        if (!dict.ContainsKey(key))
+        {
+            dict[key] = new PlayerStanding
             {
                 PlayerID = playerId,
                 Name = name,

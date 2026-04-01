@@ -278,7 +278,12 @@ public class HomeController : Controller
                 try
                 {
                     var allStandings = await _apiService.GetStandingsAsync(resolvedCompetitionId);
-                    seasonStats = allStandings.ToDictionary(p => p.PlayerID, p => p);
+                    // En spelare kan finnas i flera lag - ta den med flest matcher
+                    foreach (var p in allStandings)
+                    {
+                        if (!seasonStats.ContainsKey(p.PlayerID) || p.Matches > seasonStats[p.PlayerID].Matches)
+                            seasonStats[p.PlayerID] = p;
+                    }
                 }
                 catch
                 {
@@ -332,6 +337,34 @@ public class HomeController : Controller
                 TeamName = teamName,
                 ErrorMessage = $"Ett fel uppstod: {ex.Message}"
             });
+        }
+    }
+
+    public IActionResult TeamSearch()
+    {
+        return View();
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> SearchTeam(string query, int seasonId, int federationId)
+    {
+        if (string.IsNullOrWhiteSpace(query) || query.Trim().Length < 2)
+            return Json(new List<object>());
+
+        try
+        {
+            var results = await _apiService.SearchTeamAsync(query, seasonId, federationId);
+            return Json(results.Select(r => new
+            {
+                teamName = r.TeamName,
+                teamId = r.TeamID,
+                competitionId = r.CompetitionID,
+                competitionName = r.CompetitionName
+            }));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
         }
     }
 
