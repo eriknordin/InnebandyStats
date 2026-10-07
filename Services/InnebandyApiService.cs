@@ -11,12 +11,23 @@ public class InnebandyApiService
     private readonly HttpClient _httpClient;
     private readonly ILogger<InnebandyApiService> _logger;
     private readonly IMemoryCache _cache;
-    private string? _token;
+
+    private const string StartKitUrl = "https://api.innebandy.se/StatsAppApi/api/startkit";
+    private const string DefaultApiRoot = "https://api.innebandy.se/v2/api/public/";
+    private const string StartKitCacheKey = "api_startkit";
+
+    // Minsta tid ett API-svar återanvänds innan samma endpoint anropas igen
+    private static readonly TimeSpan ApiCacheDuration = TimeSpan.FromMinutes(10);
+    // Token gäller 30 min hos innebandy.se
+    private static readonly TimeSpan TokenCacheDuration = TimeSpan.FromMinutes(20);
+    private static readonly object CacheLock = new();
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
+
+    private record StartKit(string Token, string ApiRoot);
 
     public InnebandyApiService(HttpClient httpClient, ILogger<InnebandyApiService> logger, IMemoryCache cache)
     {
@@ -25,107 +36,149 @@ public class InnebandyApiService
         _cache = cache;
     }
 
-    private async Task EnsureTokenAsync()
+    // Cachar resultatet under ttl. Samtidiga anrop med samma nyckel delar på samma hämtning,
+    // och misslyckade hämtningar cachas inte.
+    private async Task<T> GetOrFetchAsync<T>(string cacheKey, TimeSpan ttl, Func<Task<T>> fetch)
     {
-        if (!string.IsNullOrEmpty(_token))
-            return;
-
-        _logger.LogInformation("Hämtar token från startkit API...");
-
-        var response = await _httpClient.GetAsync("https://api.innebandy.se/StatsAppApi/api/startkit");
-        response.EnsureSuccessStatusCode();
-
-        var json = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(json);
-
-        if (doc.RootElement.TryGetProperty("accessToken", out var tokenProp))
+        Lazy<Task<T>> lazy;
+        lock (CacheLock)
         {
-            _token = tokenProp.GetString()
-                ?? throw new Exception("accessToken var null i startkit-svaret.");
-        }
-        else
-        {
-            throw new Exception("Kunde inte hitta accessToken i startkit-svaret.");
+            lazy = _cache.GetOrCreate(cacheKey, entry =>
+            {
+                entry.AbsoluteExpirationRelativeToNow = ttl;
+                return new Lazy<Task<T>>(fetch);
+            })!;
         }
 
-        _logger.LogInformation("Token hämtad.");
+        try
+        {
+            return await lazy.Value;
+        }
+        catch
+        {
+            _cache.Remove(cacheKey);
+            throw;
+        }
     }
 
-    private async Task<HttpRequestMessage> CreateAuthorizedRequest(string url)
+    private Task<StartKit> GetStartKitAsync() =>
+        GetOrFetchAsync(StartKitCacheKey, TokenCacheDuration, async () =>
+        {
+            _logger.LogInformation("Hämtar token från startkit API...");
+
+            var response = await _httpClient.GetAsync(StartKitUrl);
+            response.EnsureSuccessStatusCode();
+
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+
+            if (!doc.RootElement.TryGetProperty("accessToken", out var tokenProp))
+                throw new Exception("Kunde inte hitta accessToken i startkit-svaret.");
+
+            var token = tokenProp.GetString()
+                ?? throw new Exception("accessToken var null i startkit-svaret.");
+
+            var apiRoot = DefaultApiRoot;
+            if (doc.RootElement.TryGetProperty("apiRoot", out var rootProp)
+                && rootProp.GetString() is { Length: > 0 } root)
+            {
+                apiRoot = root.EndsWith('/') ? root : root + "/";
+            }
+
+            _logger.LogInformation("Token hämtad.");
+            return new StartKit(token, apiRoot);
+        });
+
+    // Hämtar rå JSON från API:t, cachad per sökväg (endpoint + parametrar)
+    private Task<string> GetApiJsonAsync(string path, TimeSpan? ttl = null) =>
+        GetOrFetchAsync($"api_{path}", ttl ?? ApiCacheDuration, async () =>
+        {
+            var response = await SendAuthorizedAsync(path);
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                // Token kan ha gått ut i förtid – hämta ny och försök igen
+                _cache.Remove(StartKitCacheKey);
+                response = await SendAuthorizedAsync(path);
+            }
+
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadAsStringAsync();
+        });
+
+    private async Task<HttpResponseMessage> SendAuthorizedAsync(string path)
     {
-        await EnsureTokenAsync();
-        var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _token);
-        return request;
+        var startKit = await GetStartKitAsync();
+        _logger.LogDebug("API-anrop: {Path}", path);
+        var request = new HttpRequestMessage(HttpMethod.Get, startKit.ApiRoot + path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", startKit.Token);
+        return await _httpClient.SendAsync(request);
     }
 
     public async Task<List<Match>> GetMatchesAsync(int competitionId)
     {
-        var cacheKey = $"matches_{competitionId}";
-        if (_cache.TryGetValue(cacheKey, out List<Match>? cachedMatches) && cachedMatches != null)
-            return cachedMatches;
-
-        var request = await CreateAuthorizedRequest(
-            $"https://api.innebandy.se/v2/api/competitions/{competitionId}/matches");
-
-        var response = await _httpClient.SendAsync(request);
-        response.EnsureSuccessStatusCode();
-
-        var json = await response.Content.ReadAsStringAsync();
-        var matches = JsonSerializer.Deserialize<List<Match>>(json, JsonOptions) ?? new List<Match>();
-        _cache.Set(cacheKey, matches, TimeSpan.FromMinutes(5));
-        return matches;
+        var json = await GetApiJsonAsync($"competitions/{competitionId}/matches");
+        return JsonSerializer.Deserialize<List<Match>>(json, JsonOptions) ?? new List<Match>();
     }
 
     public async Task<Match?> GetMatchDetailsAsync(int matchId)
     {
-        var cacheKey = $"matchdetails_{matchId}";
-        if (_cache.TryGetValue(cacheKey, out Match? cachedDetail) && cachedDetail != null)
-            return cachedDetail;
-
-        var request = await CreateAuthorizedRequest(
-            $"https://api.innebandy.se/v2/api/matches/{matchId}");
-
-        var response = await _httpClient.SendAsync(request);
-        response.EnsureSuccessStatusCode();
-
-        var json = await response.Content.ReadAsStringAsync();
+        var json = await GetApiJsonAsync($"matches/{matchId}");
         var match = JsonSerializer.Deserialize<Match>(json, JsonOptions);
         if (match != null)
-            _cache.Set(cacheKey, match, TimeSpan.FromMinutes(30));
+            FillEventTeams(match);
         return match;
+    }
+
+    // Det publika API:t skickar bara MatchTeamID på händelser, så härled lag från matchen
+    private static void FillEventTeams(Match match)
+    {
+        if (match.Events == null) return;
+
+        foreach (var evt in match.Events)
+        {
+            if (evt.MatchTeamID == 0) continue;
+
+            if (evt.MatchTeamID == match.HomeMatchTeamID)
+            {
+                evt.IsHomeTeam ??= true;
+                if (string.IsNullOrEmpty(evt.MatchTeamName)) evt.MatchTeamName = match.HomeTeam;
+                evt.MatchTeamShortName ??= match.HomeTeamShortName;
+            }
+            else if (evt.MatchTeamID == match.AwayMatchTeamID)
+            {
+                evt.IsHomeTeam ??= false;
+                if (string.IsNullOrEmpty(evt.MatchTeamName)) evt.MatchTeamName = match.AwayTeam;
+                evt.MatchTeamShortName ??= match.AwayTeamShortName;
+            }
+        }
     }
 
     public async Task<Lineup?> GetLineupAsync(int matchId)
     {
-        var request = await CreateAuthorizedRequest(
-            $"https://api.innebandy.se/v2/api/matches/{matchId}/lineups");
-
-        var response = await _httpClient.SendAsync(request);
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            _logger.LogWarning("Kunde inte hämta lineup för match {MatchId}: {Status}", matchId, response.StatusCode);
+            var json = await GetApiJsonAsync($"matches/{matchId}/lineups");
+            return JsonSerializer.Deserialize<Lineup>(json, JsonOptions);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning("Kunde inte hämta lineup för match {MatchId}: {Status}", matchId, ex.StatusCode);
             return null;
         }
-
-        var json = await response.Content.ReadAsStringAsync();
-        return JsonSerializer.Deserialize<Lineup>(json, JsonOptions);
     }
 
     public async Task<Player?> GetPlayerAsync(int playerId)
     {
-        var request = await CreateAuthorizedRequest(
-            $"https://api.innebandy.se/v2/api/players/{playerId}");
-
-        var response = await _httpClient.SendAsync(request);
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            _logger.LogWarning("Kunde inte hämta spelare {PlayerId}: {Status}", playerId, response.StatusCode);
+            var json = await GetApiJsonAsync($"players/{playerId}");
+            return JsonSerializer.Deserialize<Player>(json, JsonOptions);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning("Kunde inte hämta spelare {PlayerId}: {Status}", playerId, ex.StatusCode);
             return null;
         }
-
-        var json = await response.Content.ReadAsStringAsync();
-        return JsonSerializer.Deserialize<Player>(json, JsonOptions);
     }
 
     public async Task<List<PlayerStanding>> GetStandingsAsync(int competitionId)
@@ -319,63 +372,25 @@ public class InnebandyApiService
 
     public async Task<List<Season>> GetSeasonsAsync()
     {
-        var cacheKey = "seasons";
-
-        if (_cache.TryGetValue(cacheKey, out List<Season>? cached) && cached != null)
-            return cached;
-
-        var request = await CreateAuthorizedRequest("https://api.innebandy.se/v2/api/seasons/");
-        var response = await _httpClient.SendAsync(request);
-        response.EnsureSuccessStatusCode();
-
-        var json = await response.Content.ReadAsStringAsync();
-        var seasons = JsonSerializer.Deserialize<List<Season>>(json, JsonOptions) ?? new List<Season>();
-
-        _cache.Set(cacheKey, seasons, TimeSpan.FromHours(1));
-        return seasons;
+        var json = await GetApiJsonAsync("seasons/", TimeSpan.FromHours(1));
+        return JsonSerializer.Deserialize<List<Season>>(json, JsonOptions) ?? new List<Season>();
     }
 
     public async Task<List<Federation>> GetFederationsAsync()
     {
-        var cacheKey = "federations";
-
-        if (_cache.TryGetValue(cacheKey, out List<Federation>? cached) && cached != null)
-            return cached;
-
-        var request = await CreateAuthorizedRequest("https://api.innebandy.se/v2/api/federations/");
-        var response = await _httpClient.SendAsync(request);
-        response.EnsureSuccessStatusCode();
-
-        var json = await response.Content.ReadAsStringAsync();
+        var json = await GetApiJsonAsync("federations/", TimeSpan.FromHours(1));
         var federations = JsonSerializer.Deserialize<List<Federation>>(json, JsonOptions) ?? new List<Federation>();
-
-        federations = federations.OrderBy(f => f.Name).ToList();
-
-        _cache.Set(cacheKey, federations, TimeSpan.FromHours(1));
-        return federations;
+        return federations.OrderBy(f => f.Name).ToList();
     }
 
     public async Task<List<Competition>> GetCompetitionsAsync(int seasonId = 43, int federationId = 8)
     {
-        var cacheKey = $"competitions_{seasonId}_{federationId}";
-
-        if (_cache.TryGetValue(cacheKey, out List<Competition>? cached) && cached != null)
-            return cached;
-
-        var request = await CreateAuthorizedRequest(
-            $"https://api.innebandy.se/v2/api/seasons/{seasonId}/federations/{federationId}/competitions");
-
-        var response = await _httpClient.SendAsync(request);
-        response.EnsureSuccessStatusCode();
-
-        var json = await response.Content.ReadAsStringAsync();
+        var json = await GetApiJsonAsync(
+            $"seasons/{seasonId}/federations/{federationId}/competitions", TimeSpan.FromMinutes(30));
         var competitions = JsonSerializer.Deserialize<List<Competition>>(json, JsonOptions) ?? new List<Competition>();
 
         // Sortera på namn
-        competitions = competitions.OrderBy(c => c.Name).ToList();
-
-        _cache.Set(cacheKey, competitions, TimeSpan.FromMinutes(30));
-        return competitions;
+        return competitions.OrderBy(c => c.Name).ToList();
     }
 
     public async Task<(Match? MatchInfo, List<PlayerStanding> HomeStandings, List<PlayerStanding> AwayStandings)> GetMatchStandingsAsync(int matchId)
