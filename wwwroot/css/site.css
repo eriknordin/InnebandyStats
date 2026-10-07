@@ -29,3 +29,44 @@ body {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
   text-align: start;
 }
+
+/* Form (V/O/F) */
+.form-dots { display: inline-flex; gap: 3px; vertical-align: middle; }
+.form-dot { display: inline-block; width: 1.25rem; height: 1.25rem; border-radius: 50%; font-size: .7rem; line-height: 1.25rem; text-align: center; color: #fff; font-weight: 600; }
+.form-dot.V { background: #198754; }
+.form-dot.O { background: #ffc107; color: #212529; }
+.form-dot.F { background: #dc3545; }
+
+/* Händelseförlopp */
+.timeline-period { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--bs-secondary-color); border-bottom: 1px solid var(--bs-border-color); padding: .5rem 0 .25rem; margin-top: .5rem; }
+.timeline-row { display: grid; grid-template-columns: 1fr 3.5rem 1fr; align-items: center; gap: .5rem; padding: .35rem 0; border-bottom: 1px solid var(--bs-border-color-translucent); }
+.timeline-row .tl-time { text-align: center; font-variant-numeric: tabular-nums; font-size: .85rem; color: var(--bs-secondary-color); }
+.timeline-row .tl-home { text-align: right; }
+.timeline-row .tl-away { text-align: left; }
+.timeline-row .tl-detail { font-size: .8rem; color: var(--bs-secondary-color); }
+.tl-score { display: inline-block; min-width: 2.6rem; text-align: center; font-weight: 700; background: var(--bs-dark); color: #fff; border-radius: .25rem; padding: 0 .3rem; font-size: .85rem; }
+.tl-tag { font-size: .65rem; vertical-align: middle; }
+.tl-penalty { color: #b26a00; }
+
+/* Diagram */
+.chart-svg { width: 100%; height: auto; display: block; }
+.chart-svg text { font-size: 11px; fill: var(--bs-secondary-color); }
+.chart-svg .grid { stroke: var(--bs-border-color); stroke-width: 1; }
+.chart-svg .bar-for { fill: #198754; }
+.chart-svg .bar-against { fill: #dc3545; opacity: .8; }
+.chart-svg .line { fill: none; stroke: #adb5bd; stroke-width: 1.5; opacity: .45; transition: opacity .15s, stroke-width .15s; }
+.chart-svg .line.highlight { stroke: var(--bs-primary); stroke-width: 3; opacity: 1; }
+.chart-svg .line.cumulative { stroke: var(--bs-primary); stroke-width: 2.5; opacity: 1; }
+.chart-legend .badge { cursor: pointer; }
+.chart-legend .badge.active { background: var(--bs-primary) !important; color: #fff !important; }
+
+/* Jämförelse inför match */
+.compare-row { display: grid; grid-template-columns: 1fr auto 1fr; gap: .75rem; align-items: center; padding: .35rem 0; border-bottom: 1px solid var(--bs-border-color-translucent); }
+.compare-row .label { font-size: .8rem; color: var(--bs-secondary-color); text-align: center; min-width: 7rem; }
+.compare-row .home { text-align: right; font-weight: 600; }
+.compare-row .away { text-align: left; font-weight: 600; }
+.compare-row .better { color: #198754; }
+
+.stat-tile { text-align: center; }
+.stat-tile .value { font-size: 1.5rem; font-weight: 700; line-height: 1.2; }
+.stat-tile .label { font-size: .8rem; color: var(--bs-secondary-color); }

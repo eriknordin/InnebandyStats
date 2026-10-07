@@ -127,7 +127,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const formRows = (d.formPlayers || []).map(p =>
                 `<li class="list-group-item list-group-item-action d-flex justify-content-between py-1 px-3 small">
-                    <a href="https://stats.innebandy.se/spelare/${p.playerId}" target="_blank" class="text-decoration-none text-dark">${escHtml(p.name)}</a>
+                    <a href="/Home/Player/${p.playerId}?competitionId=${encodeURIComponent(competitionId)}" class="text-decoration-none text-dark">${escHtml(p.name)}</a>
                     <span class="text-muted">${p.formGoals}+${p.formAssists}=<strong>${p.formPoints}</strong></span>
                 </li>`
             ).join('');
@@ -179,7 +179,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     ${d.topScorer ? `<div class="px-3 pt-1 pb-1 small">
                         <span class="text-muted">Toppscorar: </span>
-                        <a href="https://stats.innebandy.se/spelare/${d.topScorer.playerId}" target="_blank"
+                        <a href="/Home/Player/${d.topScorer.playerId}?competitionId=${encodeURIComponent(competitionId)}"
                            class="text-decoration-none text-dark fw-semibold">${escHtml(d.topScorer.name)}</a>
                         <span class="text-muted">${d.topScorer.goals}+${d.topScorer.assists}=${d.topScorer.points}p</span>
                     </div>` : ''}

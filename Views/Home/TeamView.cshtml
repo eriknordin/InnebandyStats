@@ -83,7 +83,7 @@
                         <tr>
                             <td>@rank</td>
                             <td>
-                                <strong><a href="https://stats.innebandy.se/spelare/@player.PlayerID" target="_blank" class="text-decoration-none text-dark">@player.Name</a></strong>
+                                <strong><a asp-action="Player" asp-route-id="@player.PlayerID" asp-route-competitionId="@Model.CompetitionId" class="text-decoration-none text-dark">@player.Name</a></strong>
                                 <button class="fav-inline fav-player-btn"
                                         data-id="@player.PlayerID"
                                         data-name="@player.Name"

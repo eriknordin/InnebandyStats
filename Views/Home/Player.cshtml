@@ -1,0 +1,277 @@
+@model InnebandyStats.Models.PlayerPageViewModel
+@{
+    ViewData["Title"] = string.IsNullOrEmpty(Model.Name) ? "Spelare" : Model.Name;
+    var d = Model.Details;
+    var played = Model.Lines.Where(l => l.Played).ToList();
+    var isGoalie = Model.GoalieTotal != null;
+    var teams = Model.Lines.Select(l => l.Team).Distinct().ToList();
+    var invariant = System.Globalization.CultureInfo.InvariantCulture;
+
+    static string Pct(double? v) => v.HasValue ? v.Value.ToString("0.0") + " %" : "–";
+    static string MinSec(int seconds) => $"{seconds / 60}:{seconds % 60:00}";
+}
+
+<div class="container mt-4">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item">
+                <a asp-action="Standings" asp-route-id="@Model.CompetitionId">@(string.IsNullOrEmpty(Model.CompetitionName) ? "Serie" : Model.CompetitionName)</a>
+            </li>
+            <li class="breadcrumb-item active">@Model.Name</li>
+        </ol>
+    </nav>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger">@Model.ErrorMessage</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+            <h1 class="mb-0">@Model.Name</h1>
+            <button class="btn fav-btn fav-player-btn" data-id="@Model.PlayerID" data-name="@Model.Name" title="Favoritmarkera spelare">☆</button>
+            <a href="https://stats.innebandy.se/spelare/@Model.PlayerID" target="_blank" class="btn btn-outline-secondary btn-sm">stats.innebandy.se ↗</a>
+        </div>
+        <p class="text-muted mb-4">
+            @{
+                var facts = new List<string>();
+                if (!string.IsNullOrEmpty(Model.Position)) facts.Add(Model.Position);
+                var shirt = Model.Lines.LastOrDefault(l => l.ShirtNo.HasValue)?.ShirtNo ?? d?.ShirtNo;
+                if (shirt.HasValue) facts.Add($"#{shirt}");
+                if (d?.BirthYear > 0) facts.Add($"född {d.BirthYear}" + (d.Age > 0 ? $" ({d.Age} år)" : ""));
+                if (!string.IsNullOrEmpty(d?.LicensedAssociationName)) facts.Add($"licens i {d.LicensedAssociationName}");
+            }
+            @string.Join(" · ", facts)
+            @if (teams.Count > 0)
+            {
+                <br />
+                <span>Spelar i:
+                    @for (var i = 0; i < teams.Count; i++)
+                    {
+                        <a asp-action="TeamAnalysis" asp-route-competitionId="@Model.CompetitionId" asp-route-teamName="@teams[i]" class="text-decoration-none">@teams[i]</a>@(i < teams.Count - 1 ? ", " : "")
+                    }
+                </span>
+            }
+        </p>
+
+        @if (Model.Lines.Count == 0)
+        {
+            <div class="alert alert-info">Spelaren har inga registrerade matcher i @Model.CompetitionName.</div>
+        }
+        else
+        {
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="row g-3">
+                        @{
+                            var tiles = new List<(string Value, string Label)>
+                            {
+                                (Model.Matches.ToString(), "Matcher"),
+                                (Model.Goals.ToString(), "Mål"),
+                                (Model.Assists.ToString(), "Assist"),
+                                (Model.Points.ToString(), "Poäng"),
+                                (Model.Matches > 0 ? ((double)Model.Points / Model.Matches).ToString("0.00") : "–", "Poäng/match"),
+                                (Model.PenaltyMinutes.ToString(), "Utv.min"),
+                            };
+                            if (Model.PointsRank > 0 && Model.Points > 0)
+                                tiles.Add(($"#{Model.PointsRank}", $"i poängligan av {Model.RankedPlayers}"));
+                        }
+                        @foreach (var t in tiles)
+                        {
+                            <div class="col-4 col-md">
+                                <div class="stat-tile">
+                                    <div class="value">@t.Value</div>
+                                    <div class="label">@t.Label</div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    @if (isGoalie)
+                    {
+                        var g = Model.GoalieTotal!;
+                        <hr />
+                        <div class="row g-3">
+                            @foreach (var t in new[] {
+                                (g.Matches.ToString(), "Matcher i mål"),
+                                (Math.Round(g.Minutes).ToString(), "Minuter"),
+                                (g.GoalsAgainst.ToString(), "Insläppta mål"),
+                                (g.GoalsAgainstAverage.ToString("0.00"), "Insl. mål/60 min"),
+                                (Pct(g.SavePercentage), "Räddningsprocent")
+                            })
+                            {
+                                <div class="col-4 col-md">
+                                    <div class="stat-tile">
+                                        <div class="value">@t.Item1</div>
+                                        <div class="label">@t.Item2</div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @if (played.Count > 1 && Model.Points > 0)
+            {
+                const int width = 800, height = 220, left = 32, right = 12, top = 12, bottom = 26;
+                var maxCumulative = Math.Max(1, Model.Points);
+                var maxSingle = Math.Max(1, played.Max(l => l.Points));
+                double stepX = (width - left - right) / (double)played.Count;
+                double plotHeight = height - top - bottom;
+                double Y(double v, double max) => top + plotHeight - v / max * plotHeight;
+                var cumulative = 0;
+                var points = new List<string>();
+                var gridStep = Math.Max(1, (int)Math.Ceiling(maxCumulative / 4.0));
+
+                <div class="card mb-4">
+                    <div class="card-header fw-semibold">Poäng under säsongen</div>
+                    <div class="card-body">
+                        <svg class="chart-svg" viewBox="0 0 @width @height" role="img" aria-label="Poäng per match och totalt">
+                            @for (var v = 0; v <= maxCumulative; v += gridStep)
+                            {
+                                var y = Y(v, maxCumulative).ToString("0.#", invariant);
+                                <line class="grid" x1="@left" x2="@(width - right)" y1="@y" y2="@y" opacity="0.5" />
+                                @:<text x="@(left - 6)" y="@y" dy="4" text-anchor="end">@v</text>
+                            }
+                            @for (var i = 0; i < played.Count; i++)
+                            {
+                                var l = played[i];
+                                cumulative += l.Points;
+                                var x = left + i * stepX;
+                                var barHeight = l.Points / (double)maxSingle * plotHeight * 0.35;
+                                points.Add(FormattableString.Invariant($"{x + stepX / 2:0.#},{Y(cumulative, maxCumulative):0.#}"));
+                                if (l.Points > 0)
+                                {
+                                    <rect class="bar-for" opacity="0.35"
+                                          x="@((x + stepX * 0.2).ToString("0.#", invariant))" width="@((stepX * 0.6).ToString("0.#", invariant))"
+                                          y="@((top + plotHeight - barHeight).ToString("0.#", invariant))" height="@barHeight.ToString("0.#", invariant)">
+                                        <title>@l.MatchDateTime.ToString("yyyy-MM-dd") mot @l.Opponent: @l.Goals+@l.Assists</title>
+                                    </rect>
+                                }
+                            }
+                            <polyline class="line cumulative" points="@string.Join(" ", points)" />
+                            <text x="@left" y="@(height - 6)">@played.First().MatchDateTime.ToString("d MMM", new System.Globalization.CultureInfo("sv-SE"))</text>
+                            <text x="@(width - right)" y="@(height - 6)" text-anchor="end">@played.Last().MatchDateTime.ToString("d MMM", new System.Globalization.CultureInfo("sv-SE"))</text>
+                        </svg>
+                        <div class="text-muted small">Linjen visar totala poäng, staplarna poäng per match.</div>
+                    </div>
+                </div>
+            }
+
+            <div class="card mb-4">
+                <div class="card-header fw-semibold">Match för match</div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="ps-3">Datum</th>
+                                    <th>Motståndare</th>
+                                    <th class="text-center">Resultat</th>
+                                    <th class="text-center">Mål</th>
+                                    <th class="text-center">A</th>
+                                    <th class="text-center">P</th>
+                                    <th class="text-center">Utv</th>
+                                    @if (isGoalie)
+                                    {
+                                        <th class="text-center">Tid i mål</th>
+                                        <th class="text-center">Insl.</th>
+                                        <th class="text-center">Rädd.%</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var l in Model.Lines.AsEnumerable().Reverse())
+                                {
+                                    Model.GoalieLines.TryGetValue(l.MatchID, out var gl);
+                                    <tr class="@(l.Played ? "" : "text-muted")">
+                                        <td class="ps-3 small text-nowrap">@l.MatchDateTime.ToString("yyyy-MM-dd")</td>
+                                        <td>
+                                            <span class="text-muted small">@(l.IsHome ? "H" : "B")</span>
+                                            @l.Opponent
+                                            @if (teams.Count > 1)
+                                            {
+                                                <div class="small text-muted">för @l.Team</div>
+                                            }
+                                        </td>
+                                        <td class="text-center text-nowrap">
+                                            <a asp-action="MatchView" asp-route-id="@l.MatchID" asp-route-competitionId="@Model.CompetitionId"
+                                               class="text-decoration-none text-dark">@l.GoalsFor–@l.GoalsAgainst</a>
+                                            <span class="form-dot @l.ResultLabel ms-1">@l.ResultLabel</span>
+                                        </td>
+                                        <td class="text-center">
+                                            @l.Goals
+                                            @if (l.PowerPlayGoals > 0) { <span class="badge bg-primary tl-tag" title="Powerplaymål">PP</span> }
+                                            @if (l.GameWinningGoals > 0) { <span class="badge bg-success tl-tag" title="Matchavgörande mål">MV</span> }
+                                        </td>
+                                        <td class="text-center">@l.Assists</td>
+                                        <td class="text-center"><strong>@l.Points</strong></td>
+                                        <td class="text-center">@(l.PenaltyMinutes > 0 ? l.PenaltyMinutes.ToString() : "-")</td>
+                                        @if (isGoalie)
+                                        {
+                                            <td class="text-center">@(gl != null ? MinSec(gl.Seconds) : "-")</td>
+                                            <td class="text-center">@(gl?.GoalsAgainst.ToString() ?? "-")</td>
+                                            <td class="text-center">@(gl != null ? Pct(gl.SavePercentage) : "-")</td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (d != null && d.Matches > 0)
+        {
+            var clubs = d.LicenseHistory
+                .GroupBy(l => (l.SeasonID, l.SeasonName))
+                .OrderByDescending(g => g.Key.SeasonID)
+                .Take(8)
+                .Select(g => (Season: g.Key.SeasonName, Clubs: string.Join(", ", g.Select(l => l.AssociationName).Distinct())))
+                .ToList();
+
+            <div class="card mb-4">
+                <div class="card-header fw-semibold">Karriär</div>
+                <div class="card-body">
+                    <div class="row g-3 mb-3">
+                        @foreach (var t in new[] {
+                            (d.Matches.ToString(), "Matcher"), (d.Goals.ToString(), "Mål"), (d.Assists.ToString(), "Assist"),
+                            (d.Points.ToString(), "Poäng"), (d.PenaltyMinutes.ToString(), "Utv.min") })
+                        {
+                            <div class="col">
+                                <div class="stat-tile">
+                                    <div class="value">@t.Item1</div>
+                                    <div class="label">@t.Item2</div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    @if (clubs.Count > 0)
+                    {
+                        <table class="table table-sm mb-0">
+                            <tbody>
+                                @foreach (var c in clubs)
+                                {
+                                    <tr>
+                                        <td class="text-muted" style="width:6rem;">@c.Season</td>
+                                        <td>@c.Clubs</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    <p class="text-muted small mt-2 mb-0">Karriärsiffror enligt innebandy.se, alla serier.</p>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            initFavPlayerBtns();
+        });
+    </script>
+}

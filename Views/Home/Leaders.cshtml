@@ -1,0 +1,197 @@
+@model InnebandyStats.Models.LeadersViewModel
+@using InnebandyStats.Models
+@{
+    ViewData["Title"] = Model.CompetitionName + " – Topplistor";
+
+    const int top = 10;
+    var players = Model.Players;
+    var qualified = players.Where(p => p.Matches >= Model.MinMatches).ToList();
+    var goalies = Model.Goalies.Where(g => g.Minutes >= Model.MinGoalieMinutes).ToList();
+
+    // (rubrik, förklaring, rader: spelar-id, namn, lag, värde, detalj)
+    var lists = new List<(string Title, string Note, List<(int Id, string Name, string Team, string Value, string Detail)> Rows)>
+    {
+        ("Poäng", "", players
+            .OrderByDescending(p => p.Points).ThenByDescending(p => p.Goals).ThenBy(p => p.Matches)
+            .Take(top).Select(p => (p.PlayerID, p.Name, p.Team, p.Points.ToString(), $"{p.Goals}+{p.Assists}")).ToList()),
+        ("Mål", "", players
+            .OrderByDescending(p => p.Goals).ThenBy(p => p.Matches)
+            .Take(top).Select(p => (p.PlayerID, p.Name, p.Team, p.Goals.ToString(), $"{p.Matches} m")).ToList()),
+        ("Assist", "", players
+            .OrderByDescending(p => p.Assists).ThenBy(p => p.Matches)
+            .Take(top).Select(p => (p.PlayerID, p.Name, p.Team, p.Assists.ToString(), $"{p.Matches} m")).ToList()),
+        ("Poäng per match", $"Minst {Model.MinMatches} matcher", qualified
+            .OrderByDescending(p => p.PointsPerGame).ThenByDescending(p => p.Points)
+            .Take(top).Select(p => (p.PlayerID, p.Name, p.Team, p.PointsPerGame.ToString("0.00"), $"{p.Points} p / {p.Matches} m")).ToList()),
+        ("Powerplaymål", "", players.Where(p => p.PowerPlayGoals > 0)
+            .OrderByDescending(p => p.PowerPlayGoals).ThenByDescending(p => p.Goals)
+            .Take(top).Select(p => (p.PlayerID, p.Name, p.Team, p.PowerPlayGoals.ToString(), $"av {p.Goals} mål")).ToList()),
+        ("Matchavgörande mål", "Målet som gav segermarginalen", players.Where(p => p.GameWinningGoals > 0)
+            .OrderByDescending(p => p.GameWinningGoals).ThenByDescending(p => p.Goals)
+            .Take(top).Select(p => (p.PlayerID, p.Name, p.Team, p.GameWinningGoals.ToString(), $"av {p.Goals} mål")).ToList()),
+        ("Utvisningsminuter", "", players.Where(p => p.PenaltyMinutes > 0)
+            .OrderByDescending(p => p.PenaltyMinutes).ThenBy(p => p.Matches)
+            .Take(top).Select(p => (p.PlayerID, p.Name, p.Team, p.PenaltyMinutes.ToString(), $"{p.Matches} m")).ToList()),
+        ("Räddningsprocent", $"Målvakter med minst {Model.MinGoalieMinutes} min", goalies.Where(g => g.SavePercentage.HasValue)
+            .OrderByDescending(g => g.SavePercentage).ThenByDescending(g => g.Minutes)
+            .Take(top).Select(g => (g.PlayerID, g.Name, g.Team, g.SavePercentage!.Value.ToString("0.0") + " %", $"{g.Matches} m")).ToList()),
+        ("Insläppta mål per match", $"Per 60 min, minst {Model.MinGoalieMinutes} min", goalies
+            .OrderBy(g => g.GoalsAgainstAverage).ThenByDescending(g => g.Minutes)
+            .Take(top).Select(g => (g.PlayerID, g.Name, g.Team, g.GoalsAgainstAverage.ToString("0.00"), $"{g.GoalsAgainst} på {g.Matches} m")).ToList()),
+    };
+
+    static string Pct(double? v) => v.HasValue ? v.Value.ToString("0.0") + " %" : "–";
+    static string Num(double? v) => v.HasValue ? v.Value.ToString("0.0") : "–";
+}
+
+<div class="container mt-4">
+    <h1 class="mb-1">
+        <a id="seriesLink" href="#" target="_blank" class="text-decoration-none">@Model.CompetitionName</a>
+        <button class="btn btn-sm ms-2 fav-btn fav-series-btn"
+                data-id="@Model.CompetitionId"
+                data-name="@Model.CompetitionName"
+                title="Favoritmarkera serien">☆</button>
+    </h1>
+
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <a class="nav-link" asp-action="Standings" asp-route-id="@Model.CompetitionId">Spelarlista</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" asp-action="SeriesTable" asp-route-id="@Model.CompetitionId">Serietabell</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" asp-action="Matches" asp-route-id="@Model.CompetitionId">Matcher</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link active" href="#">Topplistor</a>
+        </li>
+    </ul>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger">@Model.ErrorMessage</div>
+    }
+    else if (players.Count == 0)
+    {
+        <div class="alert alert-info">Inga spelade matcher hittades för denna serie.</div>
+    }
+    else
+    {
+        <div class="row g-4">
+            @foreach (var list in lists.Where(l => l.Rows.Count > 0))
+            {
+                <div class="col-md-6 col-xl-4">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <span class="fw-semibold">@list.Title</span>
+                            @if (!string.IsNullOrEmpty(list.Note))
+                            {
+                                <div class="text-muted small">@list.Note</div>
+                            }
+                        </div>
+                        <div class="card-body p-0">
+                            <table class="table table-sm mb-0">
+                                <tbody>
+                                    @{ var rank = 0; string? previous = null; var position = 0; }
+                                    @foreach (var row in list.Rows)
+                                    {
+                                        position++;
+                                        if (row.Value != previous) rank = position;
+                                        previous = row.Value;
+                                        <tr>
+                                            <td class="ps-3 text-muted" style="width:2rem;">@rank</td>
+                                            <td>
+                                                <a asp-action="Player" asp-route-id="@row.Id" asp-route-competitionId="@Model.CompetitionId"
+                                                   class="text-decoration-none text-dark fw-semibold">@row.Name</a>
+                                                <div class="small text-muted text-truncate" style="max-width: 14rem;">@row.Team</div>
+                                            </td>
+                                            <td class="text-end text-muted small align-middle">@row.Detail</td>
+                                            <td class="text-end pe-3 align-middle"><strong>@row.Value</strong></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (Model.Teams.Count > 0)
+        {
+            var teams = Model.Teams
+                .OrderByDescending(t => (t.PowerPlayPercent ?? 0) + (t.PenaltyKillPercent ?? 0))
+                .ToList();
+            var hasShots = teams.Any(t => t.MatchesWithShots > 0);
+
+            <h4 class="mt-5 mb-3">Lagstatistik</h4>
+            <div class="table-responsive">
+                <table class="table table-sm table-striped table-hover align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Lag</th>
+                            <th class="text-center" title="Powerplay: mål / lägen">PP</th>
+                            <th class="text-center" title="Andel utvisningar utan insläppt mål">Boxplay</th>
+                            <th class="text-center" title="Mål i numerärt underläge">BP-mål</th>
+                            @if (hasShots)
+                            {
+                                <th class="text-center d-none d-md-table-cell">Skott/m</th>
+                                <th class="text-center d-none d-md-table-cell">Skott mot/m</th>
+                                <th class="text-center d-none d-md-table-cell" title="Andel skott som blir mål">Skott-eff.</th>
+                                <th class="text-center d-none d-md-table-cell">Rädd.%</th>
+                            }
+                            <th class="text-center d-none d-sm-table-cell">Utv.min/m</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in teams)
+                        {
+                            <tr>
+                                <td>
+                                    <a asp-action="TeamAnalysis" asp-route-competitionId="@Model.CompetitionId" asp-route-teamName="@t.TeamName"
+                                       class="text-decoration-none text-dark fw-semibold">@t.TeamName</a>
+                                </td>
+                                <td class="text-center">
+                                    <strong>@Pct(t.PowerPlayPercent)</strong>
+                                    <div class="small text-muted">@t.PowerPlayGoals/@t.PowerPlayOpportunities</div>
+                                </td>
+                                <td class="text-center">
+                                    <strong>@Pct(t.PenaltyKillPercent)</strong>
+                                    <div class="small text-muted">@t.PowerPlayGoalsAgainst insl. på @t.TimesShortHanded</div>
+                                </td>
+                                <td class="text-center">@t.ShortHandedGoals</td>
+                                @if (hasShots)
+                                {
+                                    <td class="text-center d-none d-md-table-cell">@Num(t.ShotsForAverage)</td>
+                                    <td class="text-center d-none d-md-table-cell">@Num(t.ShotsAgainstAverage)</td>
+                                    <td class="text-center d-none d-md-table-cell">@Pct(t.ShootingPercent)</td>
+                                    <td class="text-center d-none d-md-table-cell">@Pct(t.SavePercent)</td>
+                                }
+                                <td class="text-center d-none d-sm-table-cell">@t.PenaltyMinutesAverage.ToString("0.0")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <p class="text-muted small mt-3">
+            PP, boxplay och matchavgörande mål räknas fram ur matchhändelserna och kan avvika något från officiell statistik.
+            Räddningsprocent för målvakter bygger på skott per period fördelade efter speltid och visas bara när skott har registrerats.
+        </p>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var seasonId = localStorage.getItem('selectedSeasonId') || '43';
+            var link = document.getElementById('seriesLink');
+            if (link) {
+                link.href = 'https://stats.innebandy.se/sasong/' + seasonId + '/serie/@Model.CompetitionId/serietabell';
+            }
+            initFavSeriesBtn(document.querySelector('.fav-series-btn'));
+        });
+    </script>
+}

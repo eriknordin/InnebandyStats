@@ -21,4 +21,6 @@ public class LineupPlayer
     public int Age { get; set; }
     public int BirthYear { get; set; }
     public int? ShirtNo { get; set; }
+    public string Position { get; set; } = "";
+    public bool Captain { get; set; }
 }

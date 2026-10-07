@@ -40,7 +40,7 @@ public class HomeController : Controller
         return Json(competitions.Select(c => new { c.CompetitionID, c.Name }));
     }
 
-    public async Task<IActionResult> Standings(int id, string? team, int? age, int? birthyear, string? name, string sort = "points", bool desc = true)
+    public async Task<IActionResult> Standings(int id, string? team, int? age, int? birthyear, string? name, string? position, string sort = "points", bool desc = true)
     {
         if (id <= 0)
             return RedirectToAction("Index");
@@ -71,7 +71,17 @@ public class HomeController : Controller
                 .OrderBy(y => y)
                 .ToList();
 
+            var availablePositions = allStandings
+                .Select(p => p.Position)
+                .Where(p => !string.IsNullOrEmpty(p))
+                .Distinct()
+                .OrderBy(p => p)
+                .ToList();
+
             var filtered = allStandings.AsEnumerable();
+
+            if (!string.IsNullOrEmpty(position))
+                filtered = filtered.Where(p => p.Position == position);
 
             if (!string.IsNullOrEmpty(team))
                 filtered = filtered.Where(p => p.Team == team);
@@ -118,11 +128,13 @@ public class HomeController : Controller
                 FilterAge = age,
                 FilterBirthYear = birthyear,
                 FilterName = name,
+                FilterPosition = position,
                 SortBy = sort,
                 SortDesc = desc,
                 AvailableTeams = availableTeams,
                 AvailableAges = availableAges,
-                AvailableBirthYears = availableBirthYears
+                AvailableBirthYears = availableBirthYears,
+                AvailablePositions = availablePositions
             };
 
             return View(viewModel);
@@ -137,21 +149,27 @@ public class HomeController : Controller
         }
     }
 
-    public async Task<IActionResult> SeriesTable(int id)
+    public async Task<IActionResult> SeriesTable(int id, string scope = "all")
     {
         if (id <= 0)
             return RedirectToAction("Index");
 
+        if (scope is not ("home" or "away"))
+            scope = "all";
+
         try
         {
-            var table = await _apiService.GetSeriesTableAsync(id);
+            var table = await _apiService.GetSeriesTableAsync(id, scope);
             var competitionName = await _apiService.GetCompetitionNameAsync(id);
+            var history = scope == "all" ? await _apiService.GetPositionHistoryAsync(id) : null;
 
             return View(new SeriesTableViewModel
             {
                 CompetitionId = id,
                 CompetitionName = competitionName,
-                Table = table
+                Scope = scope,
+                Table = table,
+                History = history
             });
         }
         catch (Exception ex)
@@ -254,7 +272,8 @@ public class HomeController : Controller
 
         try
         {
-            var (matchInfo, homeStandings, awayStandings) = await _apiService.GetMatchStandingsAsync(id);
+            var (report, players) = await _apiService.GetMatchReportAsync(id);
+            var matchInfo = report?.Match;
             var resolvedCompetitionId = competitionId > 0 ? competitionId : matchInfo?.CompetitionID ?? 0;
             var competitionName = resolvedCompetitionId > 0
                 ? await _apiService.GetCompetitionNameAsync(resolvedCompetitionId)
@@ -291,21 +310,43 @@ public class HomeController : Controller
                 }
             }
 
+            var isPlayed = matchInfo.GoalsHomeTeam.HasValue && matchInfo.GoalsAwayTeam.HasValue;
+
+            MatchPreview? preview = null;
+            if (!isPlayed && resolvedCompetitionId > 0)
+            {
+                try
+                {
+                    preview = await _apiService.GetMatchPreviewAsync(
+                        resolvedCompetitionId, matchInfo.HomeTeam.Trim(), matchInfo.AwayTeam.Trim());
+                }
+                catch
+                {
+                    // Förhandsvisningen är valfri
+                }
+            }
+
             return View(new MatchViewModel
             {
                 MatchID = id,
                 CompetitionId = resolvedCompetitionId,
                 CompetitionName = competitionName,
-                HomeTeam = matchInfo.HomeTeam,
-                AwayTeam = matchInfo.AwayTeam,
+                HomeTeam = matchInfo.HomeTeam.Trim(),
+                AwayTeam = matchInfo.AwayTeam.Trim(),
                 GoalsHomeTeam = matchInfo.GoalsHomeTeam,
                 GoalsAwayTeam = matchInfo.GoalsAwayTeam,
+                IsPlayed = isPlayed,
                 MatchDateTime = matchInfo.MatchDateTime,
                 Venue = matchInfo.Venue,
                 RoundName = matchInfo.RoundName,
-                HomeTeamStandings = homeStandings,
-                AwayTeamStandings = awayStandings,
-                SeasonStats = seasonStats
+                Spectators = matchInfo.Spectators,
+                Referees = new[] { matchInfo.Referee1, matchInfo.Referee2 }
+                    .Where(r => !string.IsNullOrWhiteSpace(r)).Select(r => r!.Trim()).ToList(),
+                Analysis = report!.Analysis,
+                HomePlayers = players.Where(p => p.IsHome).ToList(),
+                AwayPlayers = players.Where(p => !p.IsHome).ToList(),
+                SeasonStats = seasonStats,
+                Preview = preview
             });
         }
         catch (Exception ex)
@@ -335,6 +376,69 @@ public class HomeController : Controller
             {
                 CompetitionId = competitionId,
                 TeamName = teamName,
+                ErrorMessage = $"Ett fel uppstod: {ex.Message}"
+            });
+        }
+    }
+
+    public async Task<IActionResult> Leaders(int id)
+    {
+        if (id <= 0)
+            return RedirectToAction("Index");
+
+        try
+        {
+            var standingsTask = _apiService.GetStandingsAsync(id);
+            var goaliesTask = _apiService.GetGoalieStandingsAsync(id);
+            var teamsTask = _apiService.GetTeamStatsAsync(id);
+            var nameTask = _apiService.GetCompetitionNameAsync(id);
+            await Task.WhenAll(standingsTask, goaliesTask, teamsTask, nameTask);
+
+            var players = await standingsTask;
+            var goalies = await goaliesTask;
+            var maxMatches = players.Select(p => p.Matches).DefaultIfEmpty(0).Max();
+            var maxGoalieMinutes = goalies.Select(g => g.Minutes).DefaultIfEmpty(0).Max();
+
+            return View(new LeadersViewModel
+            {
+                CompetitionId = id,
+                CompetitionName = await nameTask,
+                Players = players,
+                Goalies = goalies,
+                Teams = await teamsTask,
+                // Snittlistor kräver en tredjedel av matcherna/speltiden
+                MinMatches = Math.Max(1, (int)Math.Ceiling(maxMatches / 3.0)),
+                MinGoalieMinutes = (int)Math.Ceiling(maxGoalieMinutes / 3)
+            });
+        }
+        catch (Exception ex)
+        {
+            return View(new LeadersViewModel
+            {
+                CompetitionId = id,
+                ErrorMessage = $"Ett fel uppstod: {ex.Message}"
+            });
+        }
+    }
+
+    public async Task<IActionResult> Player(int id, int competitionId)
+    {
+        if (id <= 0)
+            return RedirectToAction("Index");
+
+        if (competitionId <= 0)
+            return Redirect($"https://stats.innebandy.se/spelare/{id}");
+
+        try
+        {
+            return View(await _apiService.GetPlayerPageAsync(competitionId, id));
+        }
+        catch (Exception ex)
+        {
+            return View(new PlayerPageViewModel
+            {
+                PlayerID = id,
+                CompetitionId = competitionId,
                 ErrorMessage = $"Ett fel uppstod: {ex.Message}"
             });
         }

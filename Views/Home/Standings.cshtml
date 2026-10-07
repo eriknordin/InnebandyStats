@@ -17,6 +17,7 @@
         if (Model.FilterAge.HasValue) routeValues["age"] = Model.FilterAge.Value.ToString();
         if (Model.FilterBirthYear.HasValue) routeValues["birthyear"] = Model.FilterBirthYear.Value.ToString();
         if (!string.IsNullOrEmpty(Model.FilterName)) routeValues["name"] = Model.FilterName;
+        if (!string.IsNullOrEmpty(Model.FilterPosition)) routeValues["position"] = Model.FilterPosition;
         return Url.Action("Standings", "Home", routeValues)!;
     }
 
@@ -36,7 +37,7 @@
         return Model.SortDesc ? " \u25BC" : " \u25B2";
     }
 
-    bool HasActiveFilter => !string.IsNullOrEmpty(Model.FilterTeam) || Model.FilterAge.HasValue || Model.FilterBirthYear.HasValue || !string.IsNullOrEmpty(Model.FilterName);
+    bool HasActiveFilter => !string.IsNullOrEmpty(Model.FilterTeam) || Model.FilterAge.HasValue || Model.FilterBirthYear.HasValue || !string.IsNullOrEmpty(Model.FilterName) || !string.IsNullOrEmpty(Model.FilterPosition);
 }
 
 <div class="container mt-4">
@@ -57,6 +58,9 @@
         </li>
         <li class="nav-item">
             <a class="nav-link" asp-action="Matches" asp-route-id="@Model.CompetitionId">Matcher</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" asp-action="Leaders" asp-route-id="@Model.CompetitionId">Topplistor</a>
         </li>
     </ul>
 
@@ -99,6 +103,19 @@
                         }
                     </select>
                 </div>
+                @if (Model.AvailablePositions.Count > 0)
+                {
+                    <div class="col-6 col-md-auto">
+                        <label for="position" class="form-label mb-1">Position</label>
+                        <select name="position" id="position" class="form-select form-select-sm">
+                            <option value="">Alla</option>
+                            @foreach (var pos in Model.AvailablePositions)
+                            {
+                                <option value="@pos" selected="@(Model.FilterPosition == pos)">@pos</option>
+                            }
+                        </select>
+                    </div>
+                }
                 <div class="col-auto">
                     <button type="submit" class="btn btn-primary btn-sm">Filtrera</button>
                 </div>
@@ -159,7 +176,7 @@
                         <tr>
                             <td>@rank</td>
                             <td>
-                                <strong><a href="https://stats.innebandy.se/spelare/@player.PlayerID" target="_blank" class="text-decoration-none text-dark">@player.Name</a></strong>
+                                <strong><a asp-action="Player" asp-route-id="@player.PlayerID" asp-route-competitionId="@Model.CompetitionId" class="text-decoration-none text-dark">@player.Name</a></strong>
                                 <button class="fav-inline fav-player-btn"
                                         data-id="@player.PlayerID"
                                         data-name="@player.Name"

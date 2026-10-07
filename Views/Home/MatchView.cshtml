@@ -1,10 +1,37 @@
 @model InnebandyStats.Models.MatchViewModel
+@using InnebandyStats.Models
 @{
-    bool isPlayed = Model.GoalsHomeTeam.HasValue && Model.GoalsAwayTeam.HasValue;
+    bool isPlayed = Model.IsPlayed;
     bool hasSeasonStats = Model.SeasonStats.Count > 0;
+    var a = Model.Analysis;
+    var sv = new System.Globalization.CultureInfo("sv-SE");
     ViewData["Title"] = isPlayed
         ? $"{Model.HomeTeam} {Model.GoalsHomeTeam}–{Model.GoalsAwayTeam} {Model.AwayTeam}"
         : $"{Model.HomeTeam} vs {Model.AwayTeam}";
+}
+
+@functions {
+    string PlayerUrl(int playerId) => Url.Action("Player", "Home", new { id = playerId, competitionId = Model.CompetitionId })!;
+
+    string TeamUrl(string teamName) => Url.Action("TeamAnalysis", "Home", new { competitionId = Model.CompetitionId, teamName })!;
+
+    static string PositionShort(string position) => position switch
+    {
+        "Målvakt" => "MV",
+        "Back" => "B",
+        "Forward" => "F",
+        "Center" => "C",
+        "" => "",
+        _ => position[..1]
+    };
+
+    static string Pct(double? value) => value.HasValue ? value.Value.ToString("0.0") + " %" : "–";
+
+    static string MinSec(int seconds) => $"{seconds / 60}:{seconds % 60:00}";
+
+    // Markerar det bättre värdet i jämförelsen
+    static string Better(double? a, double? b, bool higherIsBetter = true) =>
+        a.HasValue && b.HasValue && a != b && (a > b) == higherIsBetter ? "better" : "";
 }
 
 <div class="container mt-4">
@@ -13,16 +40,7 @@
             <li class="breadcrumb-item">
                 <a asp-action="Matches" asp-route-id="@Model.CompetitionId">@Model.CompetitionName</a>
             </li>
-            <li class="breadcrumb-item active">
-                @if (isPlayed)
-                {
-                    @($"{Model.HomeTeam} {Model.GoalsHomeTeam}–{Model.GoalsAwayTeam} {Model.AwayTeam}")
-                }
-                else
-                {
-                    @($"{Model.HomeTeam} vs {Model.AwayTeam}")
-                }
-            </li>
+            <li class="breadcrumb-item active">@ViewData["Title"]</li>
         </ol>
     </nav>
 
@@ -35,7 +53,7 @@
         <div class="card mb-4">
             <div class="card-body text-center py-4">
                 <div class="text-muted small mb-2">
-                    @Model.MatchDateTime.ToString("dddd d MMMM yyyy HH:mm", new System.Globalization.CultureInfo("sv-SE"))
+                    @Model.MatchDateTime.ToString("dddd d MMMM yyyy HH:mm", sv)
                     @if (!string.IsNullOrEmpty(Model.Venue))
                     {
                         <span> · @Model.Venue</span>
@@ -45,36 +63,331 @@
                         <span> · @Model.RoundName</span>
                     }
                 </div>
-                <div class="d-flex justify-content-center align-items-center gap-4">
+                <div class="d-flex justify-content-center align-items-center gap-3 gap-md-4">
                     <div class="text-end" style="width: 200px;">
-                        <span class="fs-5 fw-bold">@Model.HomeTeam</span>
+                        <a href="@TeamUrl(Model.HomeTeam)" class="fs-5 fw-bold text-decoration-none text-dark">@Model.HomeTeam</a>
                     </div>
-                    <div class="text-center px-3">
+                    <div class="text-center px-2 text-nowrap">
                         @if (isPlayed)
                         {
-                            <span class="display-4 fw-bold">@Model.GoalsHomeTeam – @Model.GoalsAwayTeam</span>
+                            <span class="display-4 fw-bold">@Model.GoalsHomeTeam–@Model.GoalsAwayTeam</span>
                         }
                         else
                         {
                             <span class="display-4 text-muted">vs</span>
                         }
                     </div>
-                    <div style="width: 200px;">
-                        <span class="fs-5 fw-bold">@Model.AwayTeam</span>
+                    <div class="text-start" style="width: 200px;">
+                        <a href="@TeamUrl(Model.AwayTeam)" class="fs-5 fw-bold text-decoration-none text-dark">@Model.AwayTeam</a>
                     </div>
                 </div>
+                @if (isPlayed && a.Goals.Any())
+                {
+                    var periodScores = a.Goals.GroupBy(g => g.Period).OrderBy(g => g.Key)
+                        .Select(g => $"{g.Count(x => x.IsHome)}–{g.Count(x => !x.IsHome)}");
+                    <div class="text-muted small mt-2">(@string.Join(", ", periodScores))</div>
+                }
+                @if (Model.Spectators > 0 || Model.Referees.Count > 0)
+                {
+                    <div class="text-muted small mt-2">
+                        @if (Model.Spectators > 0)
+                        {
+                            <span>Publik: @Model.Spectators.Value.ToString("N0", sv)</span>
+                        }
+                        @if (Model.Spectators > 0 && Model.Referees.Count > 0)
+                        {
+                            <span> · </span>
+                        }
+                        @if (Model.Referees.Count > 0)
+                        {
+                            <span>Domare: @string.Join(", ", Model.Referees)</span>
+                        }
+                    </div>
+                }
             </div>
         </div>
 
-        @if (Model.HomeTeamStandings.Count == 0 && Model.AwayTeamStandings.Count == 0)
+        @if (isPlayed)
         {
-            <div class="alert alert-info">Ingen spelardata finns tillgänglig för denna match.</div>
+            @* Matchfakta *@
+            <div class="card mb-4">
+                <div class="card-header fw-semibold">Matchfakta</div>
+                <div class="card-body py-2">
+                    @{
+                        var homeGoalies = a.Goalies.Where(g => g.IsHome && g.HasShots).ToList();
+                        var awayGoalies = a.Goalies.Where(g => !g.IsHome && g.HasShots).ToList();
+                        double? homeSave = a.HasShots && a.ShotsAway > 0 ? 100 - (Model.GoalsAwayTeam ?? 0) * 100.0 / a.ShotsAway : null;
+                        double? awaySave = a.HasShots && a.ShotsHome > 0 ? 100 - (Model.GoalsHomeTeam ?? 0) * 100.0 / a.ShotsHome : null;
+                    }
+                    @if (a.HasShots)
+                    {
+                        <div class="compare-row">
+                            <div class="home">@a.ShotsHome</div>
+                            <div class="label">Skott på mål<br /><span class="small">@string.Join(" | ", a.Shots.Select(s => $"{s.Home}–{s.Away}"))</span></div>
+                            <div class="away">@a.ShotsAway</div>
+                        </div>
+                        <div class="compare-row">
+                            <div class="home">@Pct(homeSave)</div>
+                            <div class="label">Räddningsprocent</div>
+                            <div class="away">@Pct(awaySave)</div>
+                        </div>
+                    }
+                    <div class="compare-row">
+                        <div class="home">@a.HomePpGoals / @a.HomePpOpportunities</div>
+                        <div class="label">Powerplay (mål/lägen)</div>
+                        <div class="away">@a.AwayPpGoals / @a.AwayPpOpportunities</div>
+                    </div>
+                    <div class="compare-row border-0">
+                        <div class="home">@a.HomePenaltyMinutes</div>
+                        <div class="label">Utvisningsminuter</div>
+                        <div class="away">@a.AwayPenaltyMinutes</div>
+                    </div>
+                </div>
+            </div>
+
+            @* Händelseförlopp *@
+            @if (a.Events.Count > 0)
+            {
+                <div class="card mb-4">
+                    <div class="card-header fw-semibold">Händelseförlopp</div>
+                    <div class="card-body pt-0">
+                        @foreach (var period in a.Events.GroupBy(e => e.Period).OrderBy(g => g.Key))
+                        {
+                            <div class="timeline-period">@(string.IsNullOrEmpty(period.First().PeriodName) ? $"Period {period.Key}" : period.First().PeriodName)</div>
+                            @foreach (var e in period)
+                            {
+                                <div class="timeline-row">
+                                    @foreach (var side in new[] { true, false })
+                                    {
+                                        <div class="@(side ? "tl-home" : "tl-away")">
+                                            @if (e.IsHome == side)
+                                            {
+                                                @if (e.IsGoal)
+                                                {
+                                                    <div>
+                                                        @if (side) { <span class="me-1"><a href="@PlayerUrl(e.PlayerID)" class="fw-semibold text-decoration-none text-dark">@e.PlayerName</a></span> }
+                                                        <span class="tl-score">@e.ScoreHome–@e.ScoreAway</span>
+                                                        @if (!side) { <span class="ms-1"><a href="@PlayerUrl(e.PlayerID)" class="fw-semibold text-decoration-none text-dark">@e.PlayerName</a></span> }
+                                                    </div>
+                                                    <div class="tl-detail">
+                                                        @if (e.AssistID > 0)
+                                                        {
+                                                            <span>Assist: <a href="@PlayerUrl(e.AssistID)" class="text-decoration-none text-reset">@e.AssistName</a></span>
+                                                        }
+                                                        @if (e.Strength == GoalStrength.PowerPlay) { <span class="badge bg-primary tl-tag">PP</span> }
+                                                        @if (e.Strength == GoalStrength.ShortHanded) { <span class="badge bg-info text-dark tl-tag">Boxplay</span> }
+                                                        @if (e.Kind == TimelineEventKind.EmptyNetGoal) { <span class="badge bg-secondary tl-tag">Tom bur</span> }
+                                                        @if (e.Kind == TimelineEventKind.PenaltyShotGoal) { <span class="badge bg-secondary tl-tag">Straff</span> }
+                                                        @if (e.IsGameWinner) { <span class="badge bg-success tl-tag">Matchvinnare</span> }
+                                                    </div>
+                                                }
+                                                else if (e.Kind == TimelineEventKind.Penalty)
+                                                {
+                                                    <div class="tl-penalty small">
+                                                        <span class="badge bg-warning text-dark tl-tag">@e.PenaltyMinutes min</span>
+                                                        <a href="@PlayerUrl(e.PlayerID)" class="text-decoration-none text-reset">@e.PlayerName</a>
+                                                    </div>
+                                                    <div class="tl-detail">@e.Description</div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="tl-detail">
+                                                        @e.Description
+                                                        @if (e.PlayerID > 0) { <span>– @e.PlayerName</span> }
+                                                    </div>
+                                                }
+                                            }
+                                        </div>
+                                        @if (side)
+                                        {
+                                            <div class="tl-time">@e.Clock</div>
+                                        }
+                                    }
+                                </div>
+                            }
+                        }
+                        <p class="text-muted small mt-2 mb-0">PP och boxplay räknas fram ur utvisningarna och kan avvika vid delayed penalty eller samtidiga utvisningar.</p>
+                    </div>
+                </div>
+            }
+
+            @* Målvakter *@
+            @if (a.Goalies.Count > 0)
+            {
+                <div class="card mb-4">
+                    <div class="card-header fw-semibold">Målvakter</div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="ps-3">Målvakt</th>
+                                        <th>Lag</th>
+                                        <th class="text-center">Tid</th>
+                                        <th class="text-center">Insl. mål</th>
+                                        @if (a.HasShots)
+                                        {
+                                            <th class="text-center">Skott mot</th>
+                                            <th class="text-center">Rädd.%</th>
+                                        }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var g in a.Goalies)
+                                    {
+                                        <tr>
+                                            <td class="ps-3"><a href="@PlayerUrl(g.PlayerID)" class="text-decoration-none text-dark fw-semibold">@g.Name</a></td>
+                                            <td class="small">@(g.IsHome ? Model.HomeTeam : Model.AwayTeam)</td>
+                                            <td class="text-center">@MinSec(g.Seconds)</td>
+                                            <td class="text-center">@g.GoalsAgainst</td>
+                                            @if (a.HasShots)
+                                            {
+                                                <td class="text-center">@Math.Round(g.ShotsAgainst)</td>
+                                                <td class="text-center"><strong>@Pct(g.SavePercentage)</strong></td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    @if (a.HasShots && a.Goalies.Count > 2)
+                    {
+                        <div class="card-footer text-muted small">Skott fördelas per period efter målvakternas speltid.</div>
+                    }
+                </div>
+            }
+        }
+        else if (Model.Preview != null)
+        {
+            var p = Model.Preview;
+            <div class="card mb-4">
+                <div class="card-header fw-semibold">Inför matchen</div>
+                <div class="card-body py-2">
+                    <div class="compare-row">
+                        <div class="home @Better(-p.HomeRank, -p.AwayRank)">@(p.HomeRank > 0 ? $"{p.HomeRank}:a" : "–")</div>
+                        <div class="label">Tabellplacering</div>
+                        <div class="away @Better(-p.AwayRank, -p.HomeRank)">@(p.AwayRank > 0 ? $"{p.AwayRank}:a" : "–")</div>
+                    </div>
+                    <div class="compare-row">
+                        <div class="home @Better(p.Home?.Points, p.Away?.Points)">@(p.Home?.Points.ToString() ?? "–") p</div>
+                        <div class="label">Poäng (@(p.Home?.Played ?? 0)/@(p.Away?.Played ?? 0) matcher)</div>
+                        <div class="away @Better(p.Away?.Points, p.Home?.Points)">@(p.Away?.Points.ToString() ?? "–") p</div>
+                    </div>
+                    <div class="compare-row">
+                        <div class="home">
+                            <span class="form-dots">@foreach (var r in p.Home?.Form ?? new()) { <span class="form-dot @r">@r</span> }</span>
+                        </div>
+                        <div class="label">Form (senaste 5)</div>
+                        <div class="away">
+                            <span class="form-dots">@foreach (var r in p.Away?.Form ?? new()) { <span class="form-dot @r">@r</span> }</span>
+                        </div>
+                    </div>
+                    @{
+                        double? homeGf = p.Home?.Played > 0 ? (double)p.Home.GoalsFor / p.Home.Played : null;
+                        double? awayGf = p.Away?.Played > 0 ? (double)p.Away.GoalsFor / p.Away.Played : null;
+                        double? homeGa = p.Home?.Played > 0 ? (double)p.Home.GoalsAgainst / p.Home.Played : null;
+                        double? awayGa = p.Away?.Played > 0 ? (double)p.Away.GoalsAgainst / p.Away.Played : null;
+                    }
+                    <div class="compare-row">
+                        <div class="home @Better(homeGf, awayGf)">@(homeGf?.ToString("0.0") ?? "–")</div>
+                        <div class="label">Gjorda mål/match</div>
+                        <div class="away @Better(awayGf, homeGf)">@(awayGf?.ToString("0.0") ?? "–")</div>
+                    </div>
+                    <div class="compare-row">
+                        <div class="home @Better(homeGa, awayGa, false)">@(homeGa?.ToString("0.0") ?? "–")</div>
+                        <div class="label">Insläppta mål/match</div>
+                        <div class="away @Better(awayGa, homeGa, false)">@(awayGa?.ToString("0.0") ?? "–")</div>
+                    </div>
+                    <div class="compare-row">
+                        <div class="home @Better(p.HomeStats?.PowerPlayPercent, p.AwayStats?.PowerPlayPercent)">@Pct(p.HomeStats?.PowerPlayPercent)</div>
+                        <div class="label">Powerplay</div>
+                        <div class="away @Better(p.AwayStats?.PowerPlayPercent, p.HomeStats?.PowerPlayPercent)">@Pct(p.AwayStats?.PowerPlayPercent)</div>
+                    </div>
+                    <div class="compare-row border-0">
+                        <div class="home @Better(p.HomeStats?.PenaltyKillPercent, p.AwayStats?.PenaltyKillPercent)">@Pct(p.HomeStats?.PenaltyKillPercent)</div>
+                        <div class="label">Boxplay</div>
+                        <div class="away @Better(p.AwayStats?.PenaltyKillPercent, p.HomeStats?.PenaltyKillPercent)">@Pct(p.AwayStats?.PenaltyKillPercent)</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-4 mb-4">
+                @foreach (var side in new[] { (Model.HomeTeam, p.HomeTopPlayers), (Model.AwayTeam, p.AwayTopPlayers) })
+                {
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header fw-semibold">Bästa poänggörare – @side.Item1</div>
+                            <div class="card-body p-0">
+                                @if (side.Item2.Count == 0)
+                                {
+                                    <p class="text-muted small p-3 mb-0">Ingen poäng registrerad ännu.</p>
+                                }
+                                else
+                                {
+                                    <table class="table table-sm mb-0">
+                                        <tbody>
+                                            @foreach (var pl in side.Item2)
+                                            {
+                                                <tr>
+                                                    <td class="ps-3"><a href="@PlayerUrl(pl.PlayerID)" class="text-decoration-none text-dark fw-semibold">@pl.Name</a></td>
+                                                    <td class="text-center small text-muted">@pl.Matches m</td>
+                                                    <td class="text-center">@pl.Goals+@pl.Assists</td>
+                                                    <td class="text-center pe-3"><strong>@pl.Points p</strong></td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @if (p.PreviousMeetings.Count > 0)
+            {
+                <div class="card mb-4">
+                    <div class="card-header fw-semibold">Tidigare möten i serien</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm mb-0">
+                            <tbody>
+                                @foreach (var m in p.PreviousMeetings)
+                                {
+                                    <tr>
+                                        <td class="ps-3 text-muted small">@m.MatchDateTime.ToString("yyyy-MM-dd")</td>
+                                        <td>@(m.IsHome ? $"{Model.HomeTeam} – {Model.AwayTeam}" : $"{Model.AwayTeam} – {Model.HomeTeam}")</td>
+                                        <td class="text-center">
+                                            <a asp-action="MatchView" asp-route-id="@m.MatchID" asp-route-competitionId="@Model.CompetitionId" class="badge bg-dark text-decoration-none">
+                                                @(m.IsHome ? $"{m.GoalsFor}–{m.GoalsAgainst}" : $"{m.GoalsAgainst}–{m.GoalsFor}")
+                                            </a>
+                                        </td>
+                                        <td class="pe-3"><span class="badge @m.ResultBadgeClass" title="Ur @Model.HomeTeam:s perspektiv">@m.ResultLabel</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        }
+
+        @if (Model.HomePlayers.Count == 0 && Model.AwayPlayers.Count == 0)
+        {
+            @if (isPlayed)
+            {
+                <div class="alert alert-info">Ingen spelardata finns tillgänglig för denna match.</div>
+            }
         }
         else
         {
+            @if (!isPlayed)
+            {
+                <h4 class="mt-4">Laguppställningar</h4>
+            }
             @foreach (var teamData in new[] {
-                new { Name = Model.HomeTeam, Players = Model.HomeTeamStandings },
-                new { Name = Model.AwayTeam, Players = Model.AwayTeamStandings }
+                new { Name = Model.HomeTeam, Players = Model.HomePlayers },
+                new { Name = Model.AwayTeam, Players = Model.AwayPlayers }
             })
             {
                 <h5 class="mb-3 mt-4">@teamData.Name</h5>
@@ -84,13 +397,15 @@
                 }
                 else
                 {
+                    var players = isPlayed ? teamData.Players : teamData.Players.OrderBy(p => p.ShirtNo ?? 999).ToList();
                     <div class="table-responsive mb-4">
                         <table class="table table-sm table-striped table-hover">
                             <thead class="table-dark">
                                 <tr>
-                                    <th>#</th>
+                                    <th class="text-center">Nr</th>
                                     <th>Namn</th>
-                                    <th>Födelseår</th>
+                                    <th class="text-center d-none d-sm-table-cell">Pos</th>
+                                    <th class="d-none d-md-table-cell">Födelseår</th>
                                     @if (isPlayed)
                                     {
                                         <th class="text-center">Mål</th>
@@ -104,19 +419,22 @@
                                         <th class="text-center table-secondary">S:Mål</th>
                                         <th class="text-center table-secondary">S:Assist</th>
                                         <th class="text-center table-secondary">S:Poäng</th>
-                                        <th class="text-center table-secondary">S:P/M</th>
+                                        <th class="text-center table-secondary d-none d-md-table-cell">S:P/M</th>
                                     }
                                 </tr>
                             </thead>
                             <tbody>
-                                @{ var r = 1; }
-                                @foreach (var p in teamData.Players)
+                                @foreach (var p in players)
                                 {
                                     Model.SeasonStats.TryGetValue(p.PlayerID, out var season);
                                     <tr>
-                                        <td>@r</td>
-                                        <td><a href="https://stats.innebandy.se/spelare/@p.PlayerID" target="_blank" class="text-decoration-none text-dark fw-semibold">@p.Name</a></td>
-                                        <td>@(p.BirthYear > 0 ? p.BirthYear.ToString() : (season?.BirthYear > 0 ? season.BirthYear.ToString() : ""))</td>
+                                        <td class="text-center text-muted">@p.ShirtNo</td>
+                                        <td>
+                                            <a href="@PlayerUrl(p.PlayerID)" class="text-decoration-none text-dark fw-semibold">@p.Name</a>
+                                            @if (p.Captain) { <span class="badge bg-secondary tl-tag" title="Kapten">C</span> }
+                                        </td>
+                                        <td class="text-center small text-muted d-none d-sm-table-cell">@PositionShort(p.Position)</td>
+                                        <td class="d-none d-md-table-cell">@(season?.BirthYear > 0 ? season.BirthYear.ToString() : "")</td>
                                         @if (isPlayed)
                                         {
                                             <td class="text-center">@p.Goals</td>
@@ -130,10 +448,9 @@
                                             <td class="text-center table-light">@(season?.Goals.ToString() ?? "-")</td>
                                             <td class="text-center table-light">@(season?.Assists.ToString() ?? "-")</td>
                                             <td class="text-center table-light"><strong>@(season?.Points.ToString() ?? "-")</strong></td>
-                                            <td class="text-center table-light">@(season?.PointsPerGame.ToString("0.00") ?? "-")</td>
+                                            <td class="text-center table-light d-none d-md-table-cell">@(season?.PointsPerGame.ToString("0.00") ?? "-")</td>
                                         }
                                     </tr>
-                                    r++;
                                 }
                             </tbody>
                         </table>
@@ -143,7 +460,7 @@
 
             @if (hasSeasonStats)
             {
-                <p class="text-muted small">S: = Säsongsstatistik. M=Matcher, P/M=Poäng per match</p>
+                <p class="text-muted small">S: = Säsongsstatistik. M=Matcher, P/M=Poäng per match. Pos: MV=Målvakt, B=Back, F=Forward</p>
             }
         }
     }

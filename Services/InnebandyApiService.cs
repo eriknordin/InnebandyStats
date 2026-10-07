@@ -158,7 +158,19 @@ public class InnebandyApiService
         try
         {
             var json = await GetApiJsonAsync($"matches/{matchId}/lineups");
-            return JsonSerializer.Deserialize<Lineup>(json, JsonOptions);
+            var lineup = JsonSerializer.Deserialize<Lineup>(json, JsonOptions);
+            if (lineup != null)
+            {
+                // Ospelade matcher har null i stället för tomma listor
+                lineup.HomeTeamPlayers ??= new List<LineupPlayer>();
+                lineup.AwayTeamPlayers ??= new List<LineupPlayer>();
+                foreach (var p in lineup.HomeTeamPlayers.Concat(lineup.AwayTeamPlayers))
+                {
+                    p.Name ??= "";
+                    p.Position ??= "";
+                }
+            }
+            return lineup;
         }
         catch (HttpRequestException ex)
         {
@@ -181,193 +193,253 @@ public class InnebandyApiService
         }
     }
 
-    public async Task<List<PlayerStanding>> GetStandingsAsync(int competitionId)
+    // ---- Seriedata: allt underlag för en serie, hämtas en gång och delas av alla vyer ----
+
+    private const int PlayedStatus = 4;
+
+    public Task<CompetitionData> GetCompetitionDataAsync(int competitionId) =>
+        GetOrFetchAsync($"competitiondata_{competitionId}", ApiCacheDuration, async () =>
+        {
+            var matches = await GetMatchesAsync(competitionId);
+            var data = new CompetitionData
+            {
+                CompetitionId = competitionId,
+                CompetitionName = matches.FirstOrDefault()?.CompetitionName.Trim() ?? "",
+                Matches = matches
+            };
+
+            var played = matches.Where(m => m.MatchStatus == PlayedStatus).ToList();
+            _logger.LogInformation("Hämtar detaljer och lineups för {Count} spelade matcher...", played.Count);
+
+            foreach (var batch in played.Chunk(5))
+            {
+                var results = await Task.WhenAll(batch.Select(async m =>
+                {
+                    var detailTask = GetMatchDetailsAsync(m.MatchID);
+                    var lineupTask = GetLineupAsync(m.MatchID);
+                    var detail = await detailTask;
+                    var lineup = await lineupTask;
+
+                    return detail == null
+                        ? null
+                        : new PlayedMatch { Match = detail, Lineup = lineup, Analysis = MatchAnalyzer.Analyze(detail) };
+                }));
+
+                data.Played.AddRange(results.OfType<PlayedMatch>());
+            }
+
+            data.Played = data.Played.OrderBy(p => p.Match.MatchDateTime).ToList();
+            return data;
+        });
+
+    // Varje spelares insats i en match, från lineup och händelser
+    public static List<PlayerMatchLine> BuildPlayerLines(PlayedMatch pm)
     {
-        var cacheKey = $"standings_{competitionId}";
+        var match = pm.Match;
+        var goals = pm.Analysis.Goals.ToList();
+        var homeGoals = match.GoalsHomeTeam ?? goals.Count(g => g.IsHome);
+        var awayGoals = match.GoalsAwayTeam ?? goals.Count(g => !g.IsHome);
+        var hasLineup = pm.Lineup != null && (pm.Lineup.HomeTeamPlayers.Count > 0 || pm.Lineup.AwayTeamPlayers.Count > 0);
+        var lines = new Dictionary<int, PlayerMatchLine>();
 
-        if (_cache.TryGetValue(cacheKey, out List<PlayerStanding>? cached) && cached != null)
+        PlayerMatchLine Ensure(int playerId, string name, bool isHome)
         {
-            _logger.LogInformation("Hämtar poängliga för tävling {CompetitionId} från cache.", competitionId);
-            return cached;
-        }
-
-        // 1. Hämta alla matcher
-        _logger.LogInformation("Hämtar matcher för tävling {CompetitionId}...", competitionId);
-        var matches = await GetMatchesAsync(competitionId);
-
-        if (matches.Count == 0)
-            return new List<PlayerStanding>();
-
-        // 2. Hämta matchdetaljer och lineups för spelade matcher
-        var playedMatches = matches.Where(m => m.MatchStatus == 4).ToList();
-        _logger.LogInformation("Hämtar detaljer och lineups för {Count} spelade matcher...", playedMatches.Count);
-
-        var matchDetails = new List<Match>();
-        var lineups = new List<Lineup>();
-
-        foreach (var batch in playedMatches.Chunk(5))
-        {
-            var detailTasks = batch.Select(m => GetMatchDetailsAsync(m.MatchID));
-            var lineupTasks = batch.Select(m => GetLineupAsync(m.MatchID));
-
-            var detailResults = await Task.WhenAll(detailTasks);
-            var lineupResults = await Task.WhenAll(lineupTasks);
-
-            matchDetails.AddRange(detailResults.Where(r => r != null)!);
-            lineups.AddRange(lineupResults.Where(r => r != null)!);
-        }
-
-        // 3. Bygg spelarinfo från lineups (ålder, födelseår, lag, matchdeltagande)
-        // Nyckla på (PlayerID, Team) för att separera spelare som spelar i flera lag
-        var playerStats = new Dictionary<(int PlayerId, string Team), PlayerStanding>();
-
-        foreach (var lineup in lineups)
-        {
-            var homeTeamName = lineup.HomeTeam.Trim();
-            var awayTeamName = lineup.AwayTeam.Trim();
-
-            foreach (var p in lineup.HomeTeamPlayers)
+            if (!lines.TryGetValue(playerId, out var line))
             {
-                EnsurePlayerByTeam(playerStats, p.PlayerID, p.Name, homeTeamName);
-                playerStats[(p.PlayerID, homeTeamName)].Matches++;
-                if (p.Age > 0) playerStats[(p.PlayerID, homeTeamName)].Age = p.Age;
-                if (p.BirthYear > 0) playerStats[(p.PlayerID, homeTeamName)].BirthYear = p.BirthYear;
-            }
-
-            foreach (var p in lineup.AwayTeamPlayers)
-            {
-                EnsurePlayerByTeam(playerStats, p.PlayerID, p.Name, awayTeamName);
-                playerStats[(p.PlayerID, awayTeamName)].Matches++;
-                if (p.Age > 0) playerStats[(p.PlayerID, awayTeamName)].Age = p.Age;
-                if (p.BirthYear > 0) playerStats[(p.PlayerID, awayTeamName)].BirthYear = p.BirthYear;
-            }
-        }
-
-        // 4. Samla ihop mål, assist och utvisningar från matchdetaljer
-        foreach (var match in matchDetails)
-        {
-            if (match.Events == null) continue;
-
-            foreach (var evt in match.Events)
-            {
-                // Mål (MatchEventTypeID = 1)
-                if (evt.MatchEventTypeID == 1 && evt.PlayerID > 0)
+                lines[playerId] = line = new PlayerMatchLine
                 {
-                    var teamName = evt.MatchTeamName?.Trim() ?? "";
-                    EnsurePlayerByTeam(playerStats, evt.PlayerID, evt.PlayerName, teamName);
-                    playerStats[(evt.PlayerID, teamName)].Goals++;
+                    MatchID = match.MatchID,
+                    MatchDateTime = match.MatchDateTime,
+                    PlayerID = playerId,
+                    Name = (name ?? "").Trim(),
+                    IsHome = isHome,
+                    Team = isHome ? pm.HomeTeam : pm.AwayTeam,
+                    Opponent = isHome ? pm.AwayTeam : pm.HomeTeam,
+                    GoalsFor = isHome ? homeGoals : awayGoals,
+                    GoalsAgainst = isHome ? awayGoals : homeGoals,
+                    Played = !hasLineup
+                };
+            }
+            return line;
+        }
 
-                    // Assist
-                    if (evt.PlayerAssistID > 0)
-                    {
-                        EnsurePlayerByTeam(playerStats, evt.PlayerAssistID, evt.PlayerAssistName, teamName);
-                        playerStats[(evt.PlayerAssistID, teamName)].Assists++;
-                    }
-                }
-
-                // Utvisning (MatchEventTypeID = 2)
-                if (evt.MatchEventTypeID == 2 && evt.PlayerID > 0)
+        if (pm.Lineup != null)
+        {
+            foreach (var (players, isHome) in new[] { (pm.Lineup.HomeTeamPlayers, true), (pm.Lineup.AwayTeamPlayers, false) })
+            {
+                foreach (var p in players.Where(p => p.PlayerID > 0))
                 {
-                    var teamName = evt.MatchTeamName?.Trim() ?? "";
-                    EnsurePlayerByTeam(playerStats, evt.PlayerID, evt.PlayerName, teamName);
-                    playerStats[(evt.PlayerID, teamName)].PenaltyMinutes += 2;
+                    var line = Ensure(p.PlayerID, p.Name, isHome);
+                    line.Played = true;
+                    line.ShirtNo = p.ShirtNo;
+                    line.Position = p.Position;
+                    line.Captain = p.Captain;
                 }
             }
         }
 
-        // 5. Hämta födelseår från player-API (lineups saknar BirthYear)
-        var playerIds = playerStats.Keys.Select(k => k.PlayerId).Distinct().ToList();
-        _logger.LogInformation("Hämtar spelardetaljer för {Count} spelare...", playerIds.Count);
-
-        foreach (var batch in playerIds.Chunk(10))
+        foreach (var e in pm.Analysis.Events)
         {
-            var tasks = batch.Select(id => GetPlayerAsync(id));
-            var results = await Task.WhenAll(tasks);
-
-            foreach (var player in results.Where(p => p != null))
+            if (e.IsGoal && e.PlayerID > 0)
             {
-                // Uppdatera alla poster för denna spelare (kan finnas i flera lag)
-                foreach (var key in playerStats.Keys.Where(k => k.PlayerId == player!.PlayerID))
-                {
-                    if (player!.Age > 0) playerStats[key].Age = player.Age;
-                    if (player.BirthYear > 0) playerStats[key].BirthYear = player.BirthYear;
-                    if (!string.IsNullOrEmpty(player.Name))
-                        playerStats[key].Name = player.Name;
-                }
+                var scorer = Ensure(e.PlayerID, e.PlayerName, e.IsHome);
+                scorer.Goals++;
+                if (e.Strength == GoalStrength.PowerPlay) scorer.PowerPlayGoals++;
+                if (e.Strength == GoalStrength.ShortHanded) scorer.ShortHandedGoals++;
+                if (e.IsGameWinner) scorer.GameWinningGoals++;
+
+                if (e.AssistID > 0)
+                    Ensure(e.AssistID, e.AssistName, e.IsHome).Assists++;
+            }
+            else if (e.Kind == TimelineEventKind.Penalty && e.PlayerID > 0)
+            {
+                Ensure(e.PlayerID, e.PlayerName, e.IsHome).PenaltyMinutes += e.PenaltyMinutes;
             }
         }
 
-        var standings = playerStats.Values.ToList();
-
-        // Spara i cache i 10 minuter
-        _cache.Set(cacheKey, standings, TimeSpan.FromMinutes(10));
-        _logger.LogInformation("Poängliga cachad för tävling {CompetitionId} ({Count} spelare).", competitionId, standings.Count);
-
-        return standings;
+        return lines.Values.ToList();
     }
 
-    public async Task<List<TeamTableEntry>> GetSeriesTableAsync(int competitionId)
+    public Task<List<PlayerStanding>> GetStandingsAsync(int competitionId) =>
+        GetOrFetchAsync($"standings_{competitionId}", ApiCacheDuration, async () =>
+        {
+            var data = await GetCompetitionDataAsync(competitionId);
+
+            // Nyckla på (PlayerID, Team) för att separera spelare som spelar i flera lag
+            var standings = data.Played
+                .SelectMany(BuildPlayerLines)
+                .GroupBy(l => (l.PlayerID, l.Team))
+                .Select(g => new PlayerStanding
+                {
+                    PlayerID = g.Key.PlayerID,
+                    Team = g.Key.Team,
+                    Name = g.Last().Name,
+                    Position = MostCommon(g.Select(l => l.Position)),
+                    Matches = g.Count(l => l.Played),
+                    Goals = g.Sum(l => l.Goals),
+                    Assists = g.Sum(l => l.Assists),
+                    PenaltyMinutes = g.Sum(l => l.PenaltyMinutes),
+                    PowerPlayGoals = g.Sum(l => l.PowerPlayGoals),
+                    ShortHandedGoals = g.Sum(l => l.ShortHandedGoals),
+                    GameWinningGoals = g.Sum(l => l.GameWinningGoals)
+                })
+                .ToList();
+
+            // Ålder och födelseår finns bara i spelar-API:t
+            var playerIds = standings.Select(s => s.PlayerID).Distinct().ToList();
+            _logger.LogInformation("Hämtar spelardetaljer för {Count} spelare...", playerIds.Count);
+
+            var byPlayer = standings.ToLookup(s => s.PlayerID);
+            foreach (var batch in playerIds.Chunk(10))
+            {
+                var results = await Task.WhenAll(batch.Select(GetPlayerAsync));
+                foreach (var player in results.OfType<Player>())
+                {
+                    foreach (var standing in byPlayer[player.PlayerID])
+                    {
+                        if (player.Age > 0) standing.Age = player.Age;
+                        if (player.BirthYear > 0) standing.BirthYear = player.BirthYear;
+                        if (!string.IsNullOrEmpty(player.Name)) standing.Name = player.Name;
+                        if (string.IsNullOrEmpty(standing.Position)) standing.Position = player.Position;
+                    }
+                }
+            }
+
+            _logger.LogInformation("Poängliga klar för tävling {CompetitionId} ({Count} spelare).", competitionId, standings.Count);
+            return standings;
+        });
+
+    private static string MostCommon(IEnumerable<string> values) =>
+        values.Where(v => !string.IsNullOrEmpty(v))
+            .GroupBy(v => v)
+            .OrderByDescending(g => g.Count())
+            .Select(g => g.Key)
+            .FirstOrDefault() ?? "";
+
+    // ---- Tabeller ----
+
+    // scope: all, home (bara hemmamatcher) eller away (bara bortamatcher)
+    public static List<TeamTableEntry> BuildTable(IEnumerable<Match> matches, string scope = "all")
     {
-        var cacheKey = $"seriestable_{competitionId}";
-        if (_cache.TryGetValue(cacheKey, out List<TeamTableEntry>? cached) && cached != null)
-            return cached;
-
-        var matches = await GetMatchesAsync(competitionId);
-        var playedMatches = matches
-            .Where(m => m.MatchStatus == 4 && m.GoalsHomeTeam.HasValue && m.GoalsAwayTeam.HasValue)
-            .ToList();
-
         var teams = new Dictionary<int, TeamTableEntry>();
 
-        void EnsureTeam(int teamId, string teamName)
+        TeamTableEntry Ensure(int teamId, string teamName)
         {
-            if (!teams.ContainsKey(teamId))
-                teams[teamId] = new TeamTableEntry { TeamID = teamId, TeamName = teamName.Trim() };
+            if (!teams.TryGetValue(teamId, out var entry))
+                teams[teamId] = entry = new TeamTableEntry { TeamID = teamId, TeamName = teamName.Trim() };
+            return entry;
         }
 
-        foreach (var match in playedMatches)
+        void Add(TeamTableEntry team, int goalsFor, int goalsAgainst)
         {
-            EnsureTeam(match.HomeTeamID, match.HomeTeam);
-            EnsureTeam(match.AwayTeamID, match.AwayTeam);
+            team.Played++;
+            team.GoalsFor += goalsFor;
+            team.GoalsAgainst += goalsAgainst;
+            if (goalsFor > goalsAgainst) { team.Wins++; team.Form.Add("V"); }
+            else if (goalsFor < goalsAgainst) { team.Losses++; team.Form.Add("F"); }
+            else { team.Draws++; team.Form.Add("O"); }
+        }
 
-            var home = teams[match.HomeTeamID];
-            var away = teams[match.AwayTeamID];
+        foreach (var match in matches
+                     .Where(m => m.MatchStatus == PlayedStatus && m.GoalsHomeTeam.HasValue && m.GoalsAwayTeam.HasValue)
+                     .OrderBy(m => m.MatchDateTime))
+        {
+            var home = Ensure(match.HomeTeamID, match.HomeTeam);
+            var away = Ensure(match.AwayTeamID, match.AwayTeam);
             int homeGoals = match.GoalsHomeTeam!.Value;
             int awayGoals = match.GoalsAwayTeam!.Value;
 
-            home.Played++;
-            away.Played++;
-            home.GoalsFor += homeGoals;
-            home.GoalsAgainst += awayGoals;
-            away.GoalsFor += awayGoals;
-            away.GoalsAgainst += homeGoals;
-
-            if (homeGoals > awayGoals) { home.Wins++; away.Losses++; }
-            else if (homeGoals < awayGoals) { away.Wins++; home.Losses++; }
-            else { home.Draws++; away.Draws++; }
+            if (scope != "away") Add(home, homeGoals, awayGoals);
+            if (scope != "home") Add(away, awayGoals, homeGoals);
         }
 
-        var table = teams.Values
+        foreach (var team in teams.Values)
+            team.Form = team.Form.TakeLast(5).ToList();
+
+        return teams.Values
             .OrderByDescending(t => t.Points)
             .ThenByDescending(t => t.GoalDiff)
             .ThenByDescending(t => t.GoalsFor)
             .ThenBy(t => t.TeamName)
             .ToList();
+    }
 
-        _cache.Set(cacheKey, table, TimeSpan.FromMinutes(10));
-        return table;
+    public async Task<List<TeamTableEntry>> GetSeriesTableAsync(int competitionId, string scope = "all")
+    {
+        var matches = await GetMatchesAsync(competitionId);
+        return BuildTable(matches, scope);
+    }
+
+    public async Task<PositionHistory?> GetPositionHistoryAsync(int competitionId)
+    {
+        var matches = await GetMatchesAsync(competitionId);
+        var played = matches.Where(m => m.MatchStatus == PlayedStatus && m.GoalsHomeTeam.HasValue && m.Round > 0).ToList();
+        var rounds = played.Select(m => m.Round).Distinct().OrderBy(r => r).ToList();
+        if (rounds.Count < 2)
+            return null;
+
+        var history = new PositionHistory { Rounds = rounds };
+        var finalTable = BuildTable(played);
+        foreach (var team in finalTable)
+            history.Ranks[team.TeamName] = new List<int?>();
+
+        foreach (var round in rounds)
+        {
+            var table = BuildTable(played.Where(m => m.Round <= round));
+            foreach (var team in finalTable)
+            {
+                var index = table.FindIndex(t => t.TeamName == team.TeamName);
+                history.Ranks[team.TeamName].Add(index >= 0 ? index + 1 : null);
+            }
+        }
+
+        return history;
     }
 
     public async Task<string> GetCompetitionNameAsync(int competitionId)
     {
-        var cacheKey = $"compname_{competitionId}";
-        if (_cache.TryGetValue(cacheKey, out string? name) && name != null)
-            return name;
-
         var matches = await GetMatchesAsync(competitionId);
-        var compName = matches.FirstOrDefault()?.CompetitionName.Trim() ?? "";
-        _cache.Set(cacheKey, compName, TimeSpan.FromMinutes(10));
-        return compName;
+        return matches.FirstOrDefault()?.CompetitionName.Trim() ?? "";
     }
 
     public async Task<List<Season>> GetSeasonsAsync()
@@ -393,123 +465,241 @@ public class InnebandyApiService
         return competitions.OrderBy(c => c.Name).ToList();
     }
 
-    public async Task<(Match? MatchInfo, List<PlayerStanding> HomeStandings, List<PlayerStanding> AwayStandings)> GetMatchStandingsAsync(int matchId)
+    // ---- Målvakter och lagstatistik ----
+
+    public async Task<List<GoalieStanding>> GetGoalieStandingsAsync(int competitionId)
     {
-        var cacheKey = $"matchstandings_{matchId}";
-        if (_cache.TryGetValue(cacheKey, out (Match?, List<PlayerStanding>, List<PlayerStanding>) cached))
-            return cached;
+        var data = await GetCompetitionDataAsync(competitionId);
+        var goalies = new Dictionary<(int PlayerID, string Team), GoalieStanding>();
 
-        var matchInfo = await GetMatchDetailsAsync(matchId);
-        if (matchInfo == null)
-            return (null, new List<PlayerStanding>(), new List<PlayerStanding>());
-
-        var lineup = await GetLineupAsync(matchId);
-
-        var homeTeamName = matchInfo.HomeTeam.Trim();
-        var awayTeamName = matchInfo.AwayTeam.Trim();
-
-        var playerStats = new Dictionary<int, PlayerStanding>();
-        var isHomePlayer = new Dictionary<int, bool>();
-
-        if (lineup != null)
+        foreach (var pm in data.Played)
         {
-            foreach (var p in lineup.HomeTeamPlayers)
+            foreach (var g in pm.Analysis.Goalies)
             {
-                EnsurePlayer(playerStats, p.PlayerID, p.Name, homeTeamName);
-                playerStats[p.PlayerID].Matches = 1;
-                if (p.Age > 0) playerStats[p.PlayerID].Age = p.Age;
-                if (p.BirthYear > 0) playerStats[p.PlayerID].BirthYear = p.BirthYear;
-                isHomePlayer[p.PlayerID] = true;
-            }
-            foreach (var p in lineup.AwayTeamPlayers)
-            {
-                EnsurePlayer(playerStats, p.PlayerID, p.Name, awayTeamName);
-                playerStats[p.PlayerID].Matches = 1;
-                if (p.Age > 0) playerStats[p.PlayerID].Age = p.Age;
-                if (p.BirthYear > 0) playerStats[p.PlayerID].BirthYear = p.BirthYear;
-                isHomePlayer[p.PlayerID] = false;
+                var team = g.IsHome ? pm.HomeTeam : pm.AwayTeam;
+                var key = (g.PlayerID, team);
+                if (!goalies.TryGetValue(key, out var standing))
+                    goalies[key] = standing = new GoalieStanding { PlayerID = g.PlayerID, Name = g.Name.Trim(), Team = team };
+
+                standing.Matches++;
+                standing.Seconds += g.Seconds;
+                standing.GoalsAgainst += g.GoalsAgainst;
+                if (g.HasShots)
+                {
+                    standing.ShotsAgainst += g.ShotsAgainst;
+                    standing.GoalsAgainstWithShots += g.GoalsAgainst;
+                }
             }
         }
 
-        if (matchInfo.Events != null)
+        return goalies.Values.ToList();
+    }
+
+    public async Task<List<TeamSpecialStats>> GetTeamStatsAsync(int competitionId)
+    {
+        var data = await GetCompetitionDataAsync(competitionId);
+        var teams = new Dictionary<string, TeamSpecialStats>();
+
+        TeamSpecialStats Ensure(string name)
         {
-            foreach (var evt in matchInfo.Events)
+            if (!teams.TryGetValue(name, out var stats))
+                teams[name] = stats = new TeamSpecialStats { TeamName = name };
+            return stats;
+        }
+
+        foreach (var pm in data.Played)
+        {
+            var a = pm.Analysis;
+            foreach (var isHome in new[] { true, false })
             {
-                bool evtIsHome = evt.IsHomeTeam == true;
-                var teamName = evtIsHome ? homeTeamName : awayTeamName;
+                var stats = Ensure(isHome ? pm.HomeTeam : pm.AwayTeam);
+                var goalsFor = (isHome ? pm.Match.GoalsHomeTeam : pm.Match.GoalsAwayTeam) ?? a.Goals.Count(g => g.IsHome == isHome);
+                var goalsAgainst = (isHome ? pm.Match.GoalsAwayTeam : pm.Match.GoalsHomeTeam) ?? a.Goals.Count(g => g.IsHome != isHome);
 
-                if (evt.MatchEventTypeID == 1 && evt.PlayerID > 0)
+                stats.Matches++;
+                stats.GoalsFor += goalsFor;
+                stats.GoalsAgainst += goalsAgainst;
+                stats.PowerPlayGoals += isHome ? a.HomePpGoals : a.AwayPpGoals;
+                stats.PowerPlayOpportunities += isHome ? a.HomePpOpportunities : a.AwayPpOpportunities;
+                stats.PowerPlayGoalsAgainst += isHome ? a.AwayPpGoals : a.HomePpGoals;
+                stats.TimesShortHanded += isHome ? a.AwayPpOpportunities : a.HomePpOpportunities;
+                stats.ShortHandedGoals += a.Goals.Count(g => g.IsHome == isHome && g.Strength == GoalStrength.ShortHanded);
+                stats.PenaltyMinutes += isHome ? a.HomePenaltyMinutes : a.AwayPenaltyMinutes;
+
+                if (a.HasShots)
                 {
-                    EnsurePlayer(playerStats, evt.PlayerID, evt.PlayerName, teamName);
-                    if (!isHomePlayer.ContainsKey(evt.PlayerID)) isHomePlayer[evt.PlayerID] = evtIsHome;
-                    playerStats[evt.PlayerID].Goals++;
+                    stats.MatchesWithShots++;
+                    stats.ShotsFor += isHome ? a.ShotsHome : a.ShotsAway;
+                    stats.ShotsAgainst += isHome ? a.ShotsAway : a.ShotsHome;
+                    stats.GoalsForWithShots += goalsFor;
+                    stats.GoalsAgainstWithShots += goalsAgainst;
+                }
 
-                    if (evt.PlayerAssistID > 0)
+                foreach (var goal in a.Goals)
+                {
+                    var periodIndex = Math.Clamp(goal.Period, 1, 4) - 1;
+                    var forUs = goal.IsHome == isHome;
+                    (forUs ? stats.GoalsForByPeriod : stats.GoalsAgainstByPeriod)[periodIndex]++;
+
+                    if (goal.Period is >= 1 and <= 3)
                     {
-                        EnsurePlayer(playerStats, evt.PlayerAssistID, evt.PlayerAssistName, teamName);
-                        if (!isHomePlayer.ContainsKey(evt.PlayerAssistID)) isHomePlayer[evt.PlayerAssistID] = evtIsHome;
-                        playerStats[evt.PlayerAssistID].Assists++;
+                        var interval = (goal.Period - 1) * 4 + Math.Min(3, goal.Minute / 5);
+                        (forUs ? stats.GoalsForByInterval : stats.GoalsAgainstByInterval)[interval]++;
                     }
                 }
-
-                if (evt.MatchEventTypeID == 2 && evt.PlayerID > 0)
-                {
-                    EnsurePlayer(playerStats, evt.PlayerID, evt.PlayerName, teamName);
-                    if (!isHomePlayer.ContainsKey(evt.PlayerID)) isHomePlayer[evt.PlayerID] = evtIsHome;
-                    playerStats[evt.PlayerID].PenaltyMinutes += 2;
-                }
             }
         }
 
-        var homeStandings = playerStats
-            .Where(kv => !isHomePlayer.ContainsKey(kv.Key) || isHomePlayer[kv.Key])
-            .Select(kv => kv.Value)
-            .OrderByDescending(p => p.Points).ThenByDescending(p => p.Goals).ThenBy(p => p.Name)
-            .ToList();
-
-        var awayStandings = playerStats
-            .Where(kv => isHomePlayer.ContainsKey(kv.Key) && !isHomePlayer[kv.Key])
-            .Select(kv => kv.Value)
-            .OrderByDescending(p => p.Points).ThenByDescending(p => p.Goals).ThenBy(p => p.Name)
-            .ToList();
-
-        var result = (matchInfo, homeStandings, awayStandings);
-        _cache.Set(cacheKey, result, TimeSpan.FromMinutes(10));
-        return result;
+        return teams.Values.OrderBy(t => t.TeamName).ToList();
     }
+
+    // ---- Match ----
+
+    public async Task<(PlayedMatch? Match, List<PlayerMatchLine> Players)> GetMatchReportAsync(int matchId)
+    {
+        var detail = await GetMatchDetailsAsync(matchId);
+        if (detail == null)
+            return (null, new List<PlayerMatchLine>());
+
+        var lineup = await GetLineupAsync(matchId);
+        var pm = new PlayedMatch { Match = detail, Lineup = lineup, Analysis = MatchAnalyzer.Analyze(detail) };
+        var players = BuildPlayerLines(pm)
+            .OrderByDescending(p => p.Points)
+            .ThenByDescending(p => p.Goals)
+            .ThenBy(p => p.Name)
+            .ToList();
+
+        return (pm, players);
+    }
+
+    public async Task<MatchPreview> GetMatchPreviewAsync(int competitionId, string homeTeam, string awayTeam)
+    {
+        var tableTask = GetSeriesTableAsync(competitionId);
+        var standingsTask = GetStandingsAsync(competitionId);
+        var teamStatsTask = GetTeamStatsAsync(competitionId);
+        var matchesTask = GetMatchesAsync(competitionId);
+        await Task.WhenAll(tableTask, standingsTask, teamStatsTask, matchesTask);
+
+        var table = await tableTask;
+        var standings = await standingsTask;
+        var teamStats = await teamStatsTask;
+
+        List<PlayerStanding> Top(string team) => standings
+            .Where(p => p.Team == team)
+            .OrderByDescending(p => p.Points).ThenByDescending(p => p.Goals).ThenBy(p => p.Name)
+            .Take(3)
+            .ToList();
+
+        var meetings = (await matchesTask)
+            .Where(m => m.MatchStatus == PlayedStatus && m.GoalsHomeTeam.HasValue
+                        && ((m.HomeTeam.Trim() == homeTeam && m.AwayTeam.Trim() == awayTeam)
+                            || (m.HomeTeam.Trim() == awayTeam && m.AwayTeam.Trim() == homeTeam)))
+            .OrderByDescending(m => m.MatchDateTime)
+            .Select(m => ToResult(m, homeTeam))
+            .ToList();
+
+        return new MatchPreview
+        {
+            Home = table.FirstOrDefault(t => t.TeamName == homeTeam),
+            Away = table.FirstOrDefault(t => t.TeamName == awayTeam),
+            HomeRank = table.FindIndex(t => t.TeamName == homeTeam) + 1,
+            AwayRank = table.FindIndex(t => t.TeamName == awayTeam) + 1,
+            TeamCount = table.Count,
+            HomeStats = teamStats.FirstOrDefault(t => t.TeamName == homeTeam),
+            AwayStats = teamStats.FirstOrDefault(t => t.TeamName == awayTeam),
+            HomeTopPlayers = Top(homeTeam),
+            AwayTopPlayers = Top(awayTeam),
+            PreviousMeetings = meetings
+        };
+    }
+
+    // ---- Spelare ----
+
+    public async Task<PlayerPageViewModel> GetPlayerPageAsync(int competitionId, int playerId)
+    {
+        var dataTask = GetCompetitionDataAsync(competitionId);
+        var playerTask = GetPlayerAsync(playerId);
+        var standingsTask = GetStandingsAsync(competitionId);
+        var goaliesTask = GetGoalieStandingsAsync(competitionId);
+        await Task.WhenAll(dataTask, playerTask, standingsTask, goaliesTask);
+
+        var data = await dataTask;
+        var player = await playerTask;
+        var standings = await standingsTask;
+
+        var lines = data.Played
+            .SelectMany(BuildPlayerLines)
+            .Where(l => l.PlayerID == playerId)
+            .OrderBy(l => l.MatchDateTime)
+            .ToList();
+
+        var goalieLines = data.Played
+            .SelectMany(pm => pm.Analysis.Goalies.Where(g => g.PlayerID == playerId).Select(g => (pm.Match.MatchID, g)))
+            .ToDictionary(x => x.MatchID, x => x.g);
+
+        var goalieTotals = (await goaliesTask).Where(g => g.PlayerID == playerId).ToList();
+        GoalieStanding? goalieTotal = goalieTotals.Count == 0 ? null : new GoalieStanding
+        {
+            PlayerID = playerId,
+            Name = goalieTotals[0].Name,
+            Team = string.Join(", ", goalieTotals.Select(g => g.Team)),
+            Matches = goalieTotals.Sum(g => g.Matches),
+            Seconds = goalieTotals.Sum(g => g.Seconds),
+            GoalsAgainst = goalieTotals.Sum(g => g.GoalsAgainst),
+            ShotsAgainst = goalieTotals.Sum(g => g.ShotsAgainst),
+            GoalsAgainstWithShots = goalieTotals.Sum(g => g.GoalsAgainstWithShots)
+        };
+
+        // Placering i poängligan (summerat över lag)
+        var pointsByPlayer = standings
+            .GroupBy(s => s.PlayerID)
+            .Select(g => (PlayerID: g.Key, Points: g.Sum(s => s.Points)))
+            .ToList();
+        var myPoints = pointsByPlayer.FirstOrDefault(p => p.PlayerID == playerId).Points;
+
+        return new PlayerPageViewModel
+        {
+            CompetitionId = competitionId,
+            CompetitionName = data.CompetitionName,
+            PlayerID = playerId,
+            Name = player?.Name is { Length: > 0 } name ? name : lines.LastOrDefault()?.Name ?? "",
+            Details = player,
+            Lines = lines,
+            Totals = standings.Where(s => s.PlayerID == playerId).ToList(),
+            GoalieLines = goalieLines,
+            GoalieTotal = goalieTotal,
+            PointsRank = lines.Count > 0 ? pointsByPlayer.Count(p => p.Points > myPoints) + 1 : 0,
+            RankedPlayers = pointsByPlayer.Count
+        };
+    }
+
+    // ---- Lag ----
 
     public async Task<TeamAnalysisViewModel> GetTeamAnalysisAsync(int competitionId, string teamName)
     {
-        var cacheKey = $"teamanalysis_{competitionId}_{teamName}";
-        if (_cache.TryGetValue(cacheKey, out TeamAnalysisViewModel? cachedAnalysis) && cachedAnalysis != null)
-            return cachedAnalysis;
-
-        // Parallel fetch of base data (all cached individually)
-        var matchesTask = GetMatchesAsync(competitionId);
+        var dataTask = GetCompetitionDataAsync(competitionId);
         var standingsTask = GetStandingsAsync(competitionId);
-        var tableTask = GetSeriesTableAsync(competitionId);
-        var compNameTask = GetCompetitionNameAsync(competitionId);
-        await Task.WhenAll(matchesTask, standingsTask, tableTask, compNameTask);
+        var teamStatsTask = GetTeamStatsAsync(competitionId);
+        await Task.WhenAll(dataTask, standingsTask, teamStatsTask);
 
-        var allMatches = await matchesTask;
+        var data = await dataTask;
         var allStandings = await standingsTask;
-        var seriesTable = await tableTask;
-        var compName = await compNameTask;
+        var teamStats = await teamStatsTask;
+        var seriesTable = BuildTable(data.Matches);
 
-        // Filter and sort team's matches
-        var teamMatches = allMatches
+        // Lagets matcher, senaste först
+        var teamMatches = data.Matches
             .Where(m => m.HomeTeam.Trim() == teamName || m.AwayTeam.Trim() == teamName)
             .OrderByDescending(m => m.MatchDateTime)
             .ToList();
 
-        var played = teamMatches.Where(m => m.MatchStatus == 4 && m.GoalsHomeTeam.HasValue).ToList();
-        var upcoming = teamMatches.Where(m => m.MatchStatus != 4).OrderBy(m => m.MatchDateTime).ToList();
+        var played = teamMatches.Where(m => m.MatchStatus == PlayedStatus && m.GoalsHomeTeam.HasValue).ToList();
+        var upcoming = teamMatches.Where(m => m.MatchStatus != PlayedStatus).OrderBy(m => m.MatchDateTime).ToList();
 
-        // Table position
         var tableEntry = seriesTable.FirstOrDefault(t => t.TeamName == teamName);
         var tableRank = seriesTable.FindIndex(t => t.TeamName == teamName) + 1;
 
-        // Home/away stats, averages, streaks
+        // Hemma/borta, snitt och sviter
         int homePlayed = 0, homeWins = 0, homeDraws = 0, homeLosses = 0;
         int awayPlayed = 0, awayWins = 0, awayDraws = 0, awayLosses = 0;
         int totalGF = 0, totalGA = 0;
@@ -531,73 +721,84 @@ public class InnebandyApiService
             if (!winBroken) { if (won) winStreak++; else winBroken = true; }
         }
 
-        // Form players: last 3 match events
-        const int formCount = 3;
-        var lastPlayed = played.Take(formCount).ToList();
-        var formDict = new Dictionary<int, FormPlayer>();
-
-        if (lastPlayed.Any())
-        {
-            var detailTasks = lastPlayed.Select(m => GetMatchDetailsAsync(m.MatchID));
-            var details = await Task.WhenAll(detailTasks);
-
-            foreach (var detail in details.Where(d => d?.Events != null))
-            {
-                bool detailIsHome = detail!.HomeTeam.Trim() == teamName;
-                foreach (var evt in detail.Events!)
-                {
-                    if (evt.IsHomeTeam != detailIsHome) continue;
-                    if (evt.MatchEventTypeID == 1 && evt.PlayerID > 0)
-                    {
-                        if (!formDict.TryGetValue(evt.PlayerID, out var fp))
-                            formDict[evt.PlayerID] = fp = new FormPlayer { PlayerID = evt.PlayerID, Name = evt.PlayerName };
-                        fp.FormGoals++;
-
-                        if (evt.PlayerAssistID > 0)
-                        {
-                            if (!formDict.TryGetValue(evt.PlayerAssistID, out var fa))
-                                formDict[evt.PlayerAssistID] = fa = new FormPlayer { PlayerID = evt.PlayerAssistID, Name = evt.PlayerAssistName };
-                            fa.FormAssists++;
-                        }
-                    }
-                }
-            }
-        }
-
-        var seasonLookup = allStandings.Where(p => p.Team == teamName).ToDictionary(p => p.PlayerID);
-        foreach (var fp in formDict.Values)
-            fp.SeasonStats = seasonLookup.TryGetValue(fp.PlayerID, out var sp) ? sp : null;
-
-        var formPlayers = formDict.Values
-            .OrderByDescending(fp => fp.FormPoints).ThenByDescending(fp => fp.FormGoals)
+        var teamPlayed = data.Played
+            .Where(pm => pm.HomeTeam == teamName || pm.AwayTeam == teamName)
+            .OrderByDescending(pm => pm.Match.MatchDateTime)
             .ToList();
 
-        // Build match result lists
-        static TeamMatchResult ToResult(Match m, string teamName) {
-            bool isHome = m.HomeTeam.Trim() == teamName;
-            return new TeamMatchResult {
-                MatchID = m.MatchID,
-                MatchDateTime = m.MatchDateTime,
-                Opponent = isHome ? m.AwayTeam.Trim() : m.HomeTeam.Trim(),
-                IsHome = isHome,
-                GoalsFor = isHome ? m.GoalsHomeTeam : m.GoalsAwayTeam,
-                GoalsAgainst = isHome ? m.GoalsAwayTeam : m.GoalsHomeTeam,
-                MatchStatus = m.MatchStatus,
-                RoundName = m.RoundName,
-                Round = m.Round
-            };
-        }
+        // Formspelare: poäng i de senaste matcherna
+        const int formCount = 3;
+        var seasonLookup = allStandings.Where(p => p.Team == teamName).ToDictionary(p => p.PlayerID);
+        var formPlayers = teamPlayed
+            .Take(formCount)
+            .SelectMany(BuildPlayerLines)
+            .Where(l => l.Team == teamName && l.Points > 0)
+            .GroupBy(l => l.PlayerID)
+            .Select(g => new FormPlayer
+            {
+                PlayerID = g.Key,
+                Name = g.First().Name,
+                FormGoals = g.Sum(l => l.Goals),
+                FormAssists = g.Sum(l => l.Assists),
+                SeasonStats = seasonLookup.GetValueOrDefault(g.Key)
+            })
+            .OrderByDescending(fp => fp.FormPoints)
+            .ThenByDescending(fp => fp.FormGoals)
+            .Take(8)
+            .ToList();
+
+        // Vanligaste målskytt–assist-paren
+        var duos = teamPlayed
+            .SelectMany(pm => pm.Analysis.Goals.Where(g =>
+                g.PlayerID > 0 && g.AssistID > 0 && (g.IsHome ? pm.HomeTeam : pm.AwayTeam) == teamName))
+            .GroupBy(g => (g.PlayerID, g.AssistID))
+            .Select(g => new ScoringDuo
+            {
+                ScorerID = g.Key.PlayerID,
+                Scorer = g.First().PlayerName.Trim(),
+                AssistID = g.Key.AssistID,
+                Assist = g.First().AssistName.Trim(),
+                Goals = g.Count()
+            })
+            .Where(d => d.Goals > 1)
+            .OrderByDescending(d => d.Goals)
+            .ThenBy(d => d.Scorer)
+            .Take(5)
+            .ToList();
+
+        // Inbördes möten per motståndare
+        var headToHead = played
+            .GroupBy(m => m.HomeTeam.Trim() == teamName ? m.AwayTeam.Trim() : m.HomeTeam.Trim())
+            .Select(g =>
+            {
+                var results = g.Select(m => ToResult(m, teamName)).OrderBy(r => r.MatchDateTime).ToList();
+                return new HeadToHeadRecord
+                {
+                    Opponent = g.Key,
+                    Wins = results.Count(r => r.ResultLabel == "V"),
+                    Draws = results.Count(r => r.ResultLabel == "O"),
+                    Losses = results.Count(r => r.ResultLabel == "F"),
+                    GoalsFor = results.Sum(r => r.GoalsFor ?? 0),
+                    GoalsAgainst = results.Sum(r => r.GoalsAgainst ?? 0),
+                    Matches = results
+                };
+            })
+            .OrderBy(h => seriesTable.FindIndex(t => t.TeamName == h.Opponent))
+            .ToList();
 
         var topPlayers = allStandings
             .Where(p => p.Team == teamName)
             .OrderByDescending(p => p.Points).ThenByDescending(p => p.Goals).ThenBy(p => p.Name)
             .ToList();
 
+        var ppGoals = teamStats.Sum(t => t.PowerPlayGoals);
+        var ppOpportunities = teamStats.Sum(t => t.PowerPlayOpportunities);
+
         int totalPlayed = homePlayed + awayPlayed;
-        var result = new TeamAnalysisViewModel
+        return new TeamAnalysisViewModel
         {
             CompetitionId = competitionId,
-            CompetitionName = compName,
+            CompetitionName = data.CompetitionName,
             TeamName = teamName,
             TableRank = tableRank,
             TableEntry = tableEntry,
@@ -611,11 +812,30 @@ public class InnebandyApiService
             AwayPlayed = awayPlayed, AwayWins = awayWins, AwayDraws = awayDraws, AwayLosses = awayLosses,
             CurrentUnbeatenStreak = unbeatenStreak,
             CurrentWinStreak = winStreak,
-            FormMatchCount = formCount
+            FormMatchCount = formCount,
+            Stats = teamStats.FirstOrDefault(t => t.TeamName == teamName),
+            LeaguePowerPlayPercent = ppOpportunities > 0 ? ppGoals * 100.0 / ppOpportunities : null,
+            LeaguePenaltyKillPercent = ppOpportunities > 0 ? 100 - ppGoals * 100.0 / ppOpportunities : null,
+            Duos = duos,
+            HeadToHead = headToHead
         };
+    }
 
-        _cache.Set(cacheKey, result, TimeSpan.FromMinutes(10));
-        return result;
+    private static TeamMatchResult ToResult(Match m, string teamName)
+    {
+        bool isHome = m.HomeTeam.Trim() == teamName;
+        return new TeamMatchResult
+        {
+            MatchID = m.MatchID,
+            MatchDateTime = m.MatchDateTime,
+            Opponent = isHome ? m.AwayTeam.Trim() : m.HomeTeam.Trim(),
+            IsHome = isHome,
+            GoalsFor = isHome ? m.GoalsHomeTeam : m.GoalsAwayTeam,
+            GoalsAgainst = isHome ? m.GoalsAwayTeam : m.GoalsHomeTeam,
+            MatchStatus = m.MatchStatus,
+            RoundName = m.RoundName,
+            Round = m.Round
+        };
     }
 
     public async Task<List<TeamSearchResult>> SearchTeamAsync(string query, int seasonId, int federationId)
@@ -668,32 +888,5 @@ public class InnebandyApiService
         results = results.OrderBy(r => r.TeamName).ThenBy(r => r.CompetitionName).ToList();
         _cache.Set(cacheKey, results, TimeSpan.FromMinutes(10));
         return results;
-    }
-
-    private static void EnsurePlayer(Dictionary<int, PlayerStanding> dict, int playerId, string name, string team)
-    {
-        if (!dict.ContainsKey(playerId))
-        {
-            dict[playerId] = new PlayerStanding
-            {
-                PlayerID = playerId,
-                Name = name,
-                Team = team
-            };
-        }
-    }
-
-    private static void EnsurePlayerByTeam(Dictionary<(int PlayerId, string Team), PlayerStanding> dict, int playerId, string name, string team)
-    {
-        var key = (playerId, team);
-        if (!dict.ContainsKey(key))
-        {
-            dict[key] = new PlayerStanding
-            {
-                PlayerID = playerId,
-                Name = name,
-                Team = team
-            };
-        }
     }
 }
