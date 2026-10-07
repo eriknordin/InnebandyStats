@@ -27,4 +27,15 @@ public class Match
     public int HomeMatchTeamID { get; set; }
     public int AwayMatchTeamID { get; set; }
     public List<MatchEvent>? Events { get; set; }
+    public List<PeriodShotsOnGoal>? ShotsOnGoal { get; set; }
+    public int? Spectators { get; set; }
+    public string? Referee1 { get; set; }
+    public string? Referee2 { get; set; }
+}
+
+public class PeriodShotsOnGoal
+{
+    public int Period { get; set; }
+    public int? ShotsHomeTeam { get; set; }
+    public int? ShotsAwayTeam { get; set; }
 }

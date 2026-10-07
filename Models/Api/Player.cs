@@ -14,4 +14,13 @@ public class Player
     public int Points { get; set; }
     public int PenaltyMinutes { get; set; }
     public string LicensedAssociationName { get; set; } = "";
+    public List<PlayerLicense> LicenseHistory { get; set; } = new();
+}
+
+public class PlayerLicense
+{
+    public int SeasonID { get; set; }
+    public string SeasonName { get; set; } = "";
+    public string AssociationName { get; set; } = "";
+    public string LicenseTypeName { get; set; } = "";
 }

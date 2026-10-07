@@ -14,6 +14,7 @@ public class CompetitionViewModel
     public int? FilterAge { get; set; }
     public int? FilterBirthYear { get; set; }
     public string? FilterName { get; set; }
+    public string? FilterPosition { get; set; }
 
     // Sort
     public string SortBy { get; set; } = "points";
@@ -23,6 +24,7 @@ public class CompetitionViewModel
     public List<string> AvailableTeams { get; set; } = new();
     public List<int> AvailableAges { get; set; } = new();
     public List<int> AvailableBirthYears { get; set; } = new();
+    public List<string> AvailablePositions { get; set; } = new();
 
     // Pickers
     public List<Season> AvailableSeasons { get; set; } = new();

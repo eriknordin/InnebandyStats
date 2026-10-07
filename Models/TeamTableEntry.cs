@@ -12,4 +12,6 @@ public class TeamTableEntry
     public int GoalsAgainst { get; set; }
     public int GoalDiff => GoalsFor - GoalsAgainst;
     public int Points => Wins * 3 + Draws;
+    // Senaste resultaten (V/O/F), äldst först
+    public List<string> Form { get; set; } = new();
 }

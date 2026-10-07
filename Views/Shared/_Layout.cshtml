@@ -151,10 +151,11 @@
             renderFavMenu();
             return idx < 0;
         }
-        function toggleFavPlayer(id, name) {
+        function toggleFavPlayer(id, name, competitionId, competitionName) {
             var favs = getFavs(FAV_PLAYERS_KEY);
             var idx = favs.findIndex(x => x.id == id);
-            if (idx >= 0) favs.splice(idx, 1); else favs.push({ id: String(id), name });
+            if (idx >= 0) favs.splice(idx, 1);
+            else favs.push({ id: String(id), name, competitionId: competitionId ? String(competitionId) : undefined, competitionName });
             setFavs(FAV_PLAYERS_KEY, favs);
             renderFavMenu();
             return idx < 0;
@@ -206,8 +207,12 @@
                 menu.appendChild(hdr3);
                 players.forEach(function(p) {
                     var li = document.createElement('li');
+                    // Äldre favoriter saknar serie och länkar därför till innebandy.se
+                    var link = p.competitionId
+                        ? '<a class="dropdown-item flex-grow-1" href="/Home/Player/' + encodeURIComponent(p.id) + '?competitionId=' + encodeURIComponent(p.competitionId) + '">' + escHtml(p.name) + ' <small class="text-muted">' + escHtml(p.competitionName || '') + '</small></a>'
+                        : '<a class="dropdown-item flex-grow-1" href="https://stats.innebandy.se/spelare/' + encodeURIComponent(p.id) + '" target="_blank">' + escHtml(p.name) + '</a>';
                     li.innerHTML = '<span class="d-flex align-items-center">'
-                        + '<a class="dropdown-item flex-grow-1" href="https://stats.innebandy.se/spelare/' + encodeURIComponent(p.id) + '" target="_blank">' + escHtml(p.name) + '</a>'
+                        + link
                         + '<button class="btn btn-sm fav-inline active me-2" title="Ta bort favorit" onclick="removeFavPlayer(\'' + p.id + '\', this)">★</button>'
                         + '</span>';
                     menu.appendChild(li);
@@ -286,12 +291,27 @@
                 });
             });
         }
-        function initFavPlayerBtns() {
+        function initFavPlayerBtns(competitionId, competitionName) {
+            // Ge äldre favoriter utan serie den serie spelaren visas i nu
+            if (competitionId) {
+                var favs = getFavs(FAV_PLAYERS_KEY);
+                var ids = Array.from(document.querySelectorAll('.fav-player-btn')).map(b => b.dataset.id);
+                var changed = false;
+                favs.forEach(function(f) {
+                    if (!f.competitionId && ids.includes(String(f.id))) {
+                        f.competitionId = String(competitionId);
+                        f.competitionName = competitionName;
+                        changed = true;
+                    }
+                });
+                if (changed) { setFavs(FAV_PLAYERS_KEY, favs); renderFavMenu(); }
+            }
+
             document.querySelectorAll('.fav-player-btn').forEach(function(btn) {
                 var id = btn.dataset.id, name = btn.dataset.name;
                 if (isFavPlayer(id)) { btn.textContent = '★'; btn.classList.add('active'); }
                 btn.addEventListener('click', function() {
-                    var added = toggleFavPlayer(id, name);
+                    var added = toggleFavPlayer(id, name, competitionId, competitionName);
                     btn.textContent = added ? '★' : '☆';
                     btn.classList.toggle('active', added);
                 });

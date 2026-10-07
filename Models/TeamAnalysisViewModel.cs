@@ -65,6 +65,12 @@ public class TeamAnalysisViewModel
     public int CurrentUnbeatenStreak { get; set; }
     public int CurrentWinStreak { get; set; }
     public int FormMatchCount { get; set; } = 3;
+    public TeamSpecialStats? Stats { get; set; }
+    // Ligasnitt för jämförelse
+    public double? LeaguePowerPlayPercent { get; set; }
+    public double? LeaguePenaltyKillPercent { get; set; }
+    public List<ScoringDuo> Duos { get; set; } = new();
+    public List<HeadToHeadRecord> HeadToHead { get; set; } = new();
 
     public int TotalPlayed => HomePlayed + AwayPlayed;
     public string? ErrorMessage { get; set; }
