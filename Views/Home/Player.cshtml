@@ -271,7 +271,7 @@
 @section Scripts {
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            initFavPlayerBtns();
+            initFavPlayerBtns('@Model.CompetitionId', @Json.Serialize(Model.CompetitionName));
         });
     </script>
 }

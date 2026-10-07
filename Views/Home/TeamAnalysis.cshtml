@@ -520,7 +520,7 @@
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             initFavTeamBtns('@Model.CompetitionId', @Json.Serialize(Model.CompetitionName));
-            initFavPlayerBtns();
+            initFavPlayerBtns('@Model.CompetitionId', @Json.Serialize(Model.CompetitionName));
 
             var teamName = @Json.Serialize(Model.TeamName);
             var competitionId = '@Model.CompetitionId';

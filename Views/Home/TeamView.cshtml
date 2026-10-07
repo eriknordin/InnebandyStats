@@ -110,7 +110,7 @@
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             initFavTeamBtns('@Model.CompetitionId', @Json.Serialize(Model.CompetitionName));
-            initFavPlayerBtns();
+            initFavPlayerBtns('@Model.CompetitionId', @Json.Serialize(Model.CompetitionName));
         });
     </script>
 }

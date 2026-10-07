@@ -217,7 +217,7 @@
             }
             initFavSeriesBtn(document.querySelector('.fav-series-btn'));
             initFavTeamBtns('@Model.CompetitionId', @Json.Serialize(Model.CompetitionName));
-            initFavPlayerBtns();
+            initFavPlayerBtns('@Model.CompetitionId', @Json.Serialize(Model.CompetitionName));
         });
     </script>
 }
