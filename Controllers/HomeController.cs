@@ -238,21 +238,43 @@ public class HomeController : Controller
         }
     }
 
-    public async Task<IActionResult> Matches(int id)
+    public async Task<IActionResult> Matches(int id, string? team, string sort = "round")
     {
         if (id <= 0)
             return RedirectToAction("Index");
+
+        if (sort is not ("date" or "date_desc"))
+            sort = "round";
 
         try
         {
             var matches = await _apiService.GetMatchesAsync(id);
             var competitionName = await _apiService.GetCompetitionNameAsync(id);
 
+            var availableTeams = matches
+                .SelectMany(m => new[] { m.HomeTeam.Trim(), m.AwayTeam.Trim() })
+                .Where(t => !string.IsNullOrEmpty(t))
+                .Distinct()
+                .OrderBy(t => t)
+                .ToList();
+
+            var filtered = matches.AsEnumerable();
+
+            if (!string.IsNullOrEmpty(team))
+                filtered = filtered.Where(m => m.HomeTeam.Trim() == team || m.AwayTeam.Trim() == team);
+
+            filtered = sort == "date_desc"
+                ? filtered.OrderByDescending(m => m.MatchDateTime)
+                : filtered.OrderBy(m => m.MatchDateTime);
+
             return View(new MatchesViewModel
             {
                 CompetitionId = id,
                 CompetitionName = competitionName,
-                Matches = matches.OrderBy(m => m.MatchDateTime).ToList()
+                Matches = filtered.ToList(),
+                FilterTeam = team,
+                SortBy = sort,
+                AvailableTeams = availableTeams
             });
         }
         catch (Exception ex)

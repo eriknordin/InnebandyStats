@@ -14,10 +14,10 @@
 
     <ul class="nav nav-tabs mb-4">
         <li class="nav-item">
-            <a class="nav-link" asp-action="Standings" asp-route-id="@Model.CompetitionId">Spelarlista</a>
+            <a class="nav-link" asp-action="SeriesTable" asp-route-id="@Model.CompetitionId">Serietabell</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" asp-action="SeriesTable" asp-route-id="@Model.CompetitionId">Serietabell</a>
+            <a class="nav-link" asp-action="Standings" asp-route-id="@Model.CompetitionId">Spelarlista</a>
         </li>
         <li class="nav-item">
             <a class="nav-link active" href="#">Matcher</a>
@@ -32,6 +32,42 @@
         <div class="alert alert-danger">@Model.ErrorMessage</div>
     }
 
+    @if (Model.AvailableTeams.Count > 0)
+    {
+        <form method="get" asp-action="Matches" class="mb-3">
+            <input type="hidden" name="id" value="@Model.CompetitionId" />
+            <div class="row g-2 align-items-end">
+                <div class="col-12 col-sm-6 col-md-4">
+                    <label for="teamFilter" class="form-label small text-muted mb-1">Lag</label>
+                    <select id="teamFilter" name="team" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Alla lag</option>
+                        @foreach (var t in Model.AvailableTeams)
+                        {
+                            <option value="@t" selected="@(t == Model.FilterTeam)">@t</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-sm-6 col-md-4">
+                    <label for="sortSelect" class="form-label small text-muted mb-1">Sortering</label>
+                    <select id="sortSelect" name="sort" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="round" selected="@(Model.SortBy == "round")">Per omgång</option>
+                        <option value="date" selected="@(Model.SortBy == "date")">Datum (äldst först)</option>
+                        <option value="date_desc" selected="@(Model.SortBy == "date_desc")">Datum (senast först)</option>
+                    </select>
+                </div>
+                @if (!string.IsNullOrEmpty(Model.FilterTeam))
+                {
+                    <div class="col-auto">
+                        <a asp-action="Matches" asp-route-id="@Model.CompetitionId"
+                           asp-route-sort="@(Model.SortBy == "round" ? null : Model.SortBy)"
+                           class="btn btn-sm btn-outline-secondary">Rensa filter</a>
+                    </div>
+                }
+            </div>
+            <noscript><button type="submit" class="btn btn-sm btn-primary mt-2">Visa</button></noscript>
+        </form>
+    }
+
     @if (Model.Matches.Count == 0 && string.IsNullOrEmpty(Model.ErrorMessage))
     {
         <div class="alert alert-info">Inga matcher hittades för denna serie.</div>
@@ -39,7 +75,9 @@
 
     @if (Model.Matches.Count > 0)
     {
-        var grouped = Model.Matches.GroupBy(m => string.IsNullOrEmpty(m.RoundName) ? $"Omgång {m.Round}" : m.RoundName).ToList();
+        var grouped = Model.SortBy == "round"
+            ? Model.Matches.GroupBy(m => string.IsNullOrEmpty(m.RoundName) ? $"Omgång {m.Round}" : m.RoundName).ToList()
+            : Model.Matches.GroupBy(m => m.MatchDateTime.ToString("dddd d MMMM yyyy", new System.Globalization.CultureInfo("sv-SE"))).ToList();
 
         foreach (var group in grouped)
         {
@@ -54,7 +92,7 @@
                                 <td class="text-muted small" style="width:130px; white-space:nowrap;">
                                     @match.MatchDateTime.ToString("yyyy-MM-dd HH:mm")
                                 </td>
-                                <td class="text-end fw-semibold" style="width:35%;">@match.HomeTeam</td>
+                                <td class="text-end @(match.HomeTeam.Trim() == Model.FilterTeam ? "fw-bold" : "fw-semibold")" style="width:35%;">@match.HomeTeam</td>
                                 <td class="text-center px-2" style="width:80px; white-space:nowrap;">
                                     @if (isPlayed && match.GoalsHomeTeam.HasValue && match.GoalsAwayTeam.HasValue)
                                     {
@@ -75,7 +113,7 @@
                                         </a>
                                     }
                                 </td>
-                                <td class="fw-semibold" style="width:35%;">@match.AwayTeam</td>
+                                <td class="@(match.AwayTeam.Trim() == Model.FilterTeam ? "fw-bold" : "fw-semibold")" style="width:35%;">@match.AwayTeam</td>
                                 <td class="text-muted small">@match.Venue</td>
                             </tr>
                         }

@@ -180,7 +180,7 @@
                 series.forEach(function(s) {
                     var li = document.createElement('li');
                     li.innerHTML = '<span class="d-flex align-items-center">'
-                        + '<a class="dropdown-item flex-grow-1" href="/Home/Standings?id=' + encodeURIComponent(s.id) + '">' + escHtml(s.name) + '</a>'
+                        + '<a class="dropdown-item flex-grow-1" href="/Home/SeriesTable?id=' + encodeURIComponent(s.id) + '">' + escHtml(s.name) + '</a>'
                         + '<button class="btn btn-sm fav-inline active me-2" title="Ta bort favorit" onclick="removeFavSeries(\'' + s.id + '\', this)">★</button>'
                         + '</span>';
                     menu.appendChild(li);
@@ -469,7 +469,7 @@
 
             goBtn.addEventListener('click', function () {
                 if (selectedCompetitionId) {
-                    window.location.href = `/Home/Standings?id=${selectedCompetitionId}`;
+                    window.location.href = `/Home/SeriesTable?id=${selectedCompetitionId}`;
                 }
             });
 
@@ -477,7 +477,7 @@
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     if (selectedCompetitionId) {
-                        window.location.href = `/Home/Standings?id=${selectedCompetitionId}`;
+                        window.location.href = `/Home/SeriesTable?id=${selectedCompetitionId}`;
                     }
                 }
             });
