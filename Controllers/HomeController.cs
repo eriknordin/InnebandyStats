@@ -163,6 +163,7 @@ public class HomeController : Controller
             var competitionName = await _apiService.GetCompetitionNameAsync(id);
             var history = scope == "all" ? await _apiService.GetPositionHistoryAsync(id) : null;
             var matches = await _apiService.GetMatchesAsync(id);
+            var projection = scope == "all" ? await _apiService.GetSeasonProjectionAsync(id) : null;
 
             return View(new SeriesTableViewModel
             {
@@ -172,7 +173,8 @@ public class HomeController : Controller
                 Table = table,
                 History = history,
                 RecentMatches = matches.Where(IsPlayed).OrderByDescending(m => m.MatchDateTime).Take(5).ToList(),
-                UpcomingMatches = matches.Where(IsUpcoming).OrderBy(m => m.MatchDateTime).Take(5).ToList()
+                UpcomingMatches = matches.Where(IsUpcoming).OrderBy(m => m.MatchDateTime).Take(5).ToList(),
+                Projection = projection
             });
         }
         catch (Exception ex)
@@ -392,7 +394,18 @@ public class HomeController : Controller
 
         try
         {
-            var analysis = await _apiService.GetTeamAnalysisAsync(competitionId, teamName);
+            var analysisTask = _apiService.GetTeamAnalysisAsync(competitionId, teamName);
+            var insightsTask = _apiService.GetTeamInsightsAsync(competitionId, teamName);
+            var projectionTask = _apiService.GetSeasonProjectionAsync(competitionId);
+            await Task.WhenAll(analysisTask, insightsTask, projectionTask);
+
+            var analysis = await analysisTask;
+            var projection = await projectionTask;
+            analysis.Insights = await insightsTask;
+            analysis.Projection = projection.For(teamName);
+            analysis.TeamCount = projection.Teams.Count;
+            analysis.RemainingLeagueMatches = projection.RemainingMatches;
+            analysis.OtherTeams = projection.Teams.Select(t => t.TeamName).Where(t => t != teamName).OrderBy(t => t).ToList();
             return View(analysis);
         }
         catch (Exception ex)
@@ -441,6 +454,44 @@ public class HomeController : Controller
             return View(new LeadersViewModel
             {
                 CompetitionId = id,
+                ErrorMessage = $"Ett fel uppstod: {ex.Message}"
+            });
+        }
+    }
+
+    public async Task<IActionResult> TeamStats(int id)
+    {
+        if (id <= 0)
+            return RedirectToAction("Index");
+
+        try
+        {
+            return View(await _apiService.GetLeagueTeamStatsAsync(id));
+        }
+        catch (Exception ex)
+        {
+            return View(new LeagueTeamStatsViewModel
+            {
+                CompetitionId = id,
+                ErrorMessage = $"Ett fel uppstod: {ex.Message}"
+            });
+        }
+    }
+
+    public async Task<IActionResult> CompareTeams(int competitionId, string? teamA, string? teamB)
+    {
+        if (competitionId <= 0)
+            return RedirectToAction("Index");
+
+        try
+        {
+            return View(await _apiService.GetTeamComparisonAsync(competitionId, teamA?.Trim(), teamB?.Trim()));
+        }
+        catch (Exception ex)
+        {
+            return View(new TeamComparisonViewModel
+            {
+                CompetitionId = competitionId,
                 ErrorMessage = $"Ett fel uppstod: {ex.Message}"
             });
         }

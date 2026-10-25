@@ -609,7 +609,8 @@ public class InnebandyApiService
             AwayStats = teamStats.FirstOrDefault(t => t.TeamName == awayTeam),
             HomeTopPlayers = Top(homeTeam),
             AwayTopPlayers = Top(awayTeam),
-            PreviousMeetings = meetings
+            PreviousMeetings = meetings,
+            Odds = SeasonSimulator.GetMatchOdds(await matchesTask, homeTeam, awayTeam)
         };
     }
 
@@ -819,6 +820,124 @@ public class InnebandyApiService
             Duos = duos,
             HeadToHead = headToHead
         };
+    }
+
+    // ---- Prognoser och lagjämförelser ----
+
+    // Bygger bara på matchlistan, så serietabellen slipper hämta alla matchdetaljer
+    public Task<SeasonProjection> GetSeasonProjectionAsync(int competitionId) =>
+        GetOrFetchAsync($"projection_{competitionId}", ApiCacheDuration, async () =>
+            SeasonSimulator.Project(competitionId, await GetMatchesAsync(competitionId)));
+
+    public async Task<TeamInsights> GetTeamInsightsAsync(int competitionId, string teamName)
+    {
+        var dataTask = GetCompetitionDataAsync(competitionId);
+        var standingsTask = GetStandingsAsync(competitionId);
+        await Task.WhenAll(dataTask, standingsTask);
+
+        var data = await dataTask;
+        return TeamInsightsCalculator.Calculate(data, teamName, BuildTable(data.Matches), await standingsTask);
+    }
+
+    private static List<PlayedMatch> PlayedBy(CompetitionData data, string teamName) => data.Played
+        .Where(pm => (pm.HomeTeam == teamName || pm.AwayTeam == teamName)
+                     && pm.Match.GoalsHomeTeam.HasValue && pm.Match.GoalsAwayTeam.HasValue)
+        .OrderBy(pm => pm.Match.MatchDateTime)
+        .ToList();
+
+    public async Task<LeagueTeamStatsViewModel> GetLeagueTeamStatsAsync(int competitionId)
+    {
+        var dataTask = GetCompetitionDataAsync(competitionId);
+        var statsTask = GetTeamStatsAsync(competitionId);
+        var projectionTask = GetSeasonProjectionAsync(competitionId);
+        await Task.WhenAll(dataTask, statsTask, projectionTask);
+
+        var data = await dataTask;
+        var stats = await statsTask;
+        var projection = await projectionTask;
+        var table = BuildTable(data.Matches);
+
+        return new LeagueTeamStatsViewModel
+        {
+            CompetitionId = competitionId,
+            CompetitionName = data.CompetitionName,
+            Teams = table.Select((t, i) => new LeagueTeamRow
+            {
+                TeamName = t.TeamName,
+                Rank = i + 1,
+                Table = t,
+                Stats = stats.FirstOrDefault(s => s.TeamName == t.TeamName),
+                GameStates = TeamInsightsCalculator.GameStates(PlayedBy(data, t.TeamName), t.TeamName),
+                Projection = projection.For(t.TeamName)
+            }).ToList()
+        };
+    }
+
+    public async Task<TeamComparisonViewModel> GetTeamComparisonAsync(int competitionId, string? teamA, string? teamB)
+    {
+        var dataTask = GetCompetitionDataAsync(competitionId);
+        var statsTask = GetTeamStatsAsync(competitionId);
+        var projectionTask = GetSeasonProjectionAsync(competitionId);
+        var standingsTask = GetStandingsAsync(competitionId);
+        await Task.WhenAll(dataTask, statsTask, projectionTask, standingsTask);
+
+        var data = await dataTask;
+        var stats = await statsTask;
+        var projection = await projectionTask;
+        var standings = await standingsTask;
+        var table = BuildTable(data.Matches);
+
+        var teams = data.Matches
+            .SelectMany(m => new[] { m.HomeTeam.Trim(), m.AwayTeam.Trim() })
+            .Where(t => !string.IsNullOrEmpty(t))
+            .Distinct()
+            .OrderBy(t => t)
+            .ToList();
+
+        ComparisonSide? Side(string? name)
+        {
+            if (string.IsNullOrEmpty(name) || !teams.Contains(name)) return null;
+            return new ComparisonSide
+            {
+                TeamName = name,
+                Rank = table.FindIndex(t => t.TeamName == name) + 1,
+                Table = table.FirstOrDefault(t => t.TeamName == name),
+                Stats = stats.FirstOrDefault(s => s.TeamName == name),
+                GameStates = TeamInsightsCalculator.GameStates(PlayedBy(data, name), name),
+                Projection = projection.For(name),
+                TopPlayers = standings
+                    .Where(p => p.Team == name)
+                    .OrderByDescending(p => p.Points).ThenByDescending(p => p.Goals).ThenBy(p => p.Name)
+                    .Take(3)
+                    .ToList()
+            };
+        }
+
+        var a = Side(teamA);
+        var b = Side(teamB);
+        var model = new TeamComparisonViewModel
+        {
+            CompetitionId = competitionId,
+            CompetitionName = data.CompetitionName,
+            AvailableTeams = teams,
+            TeamA = a,
+            TeamB = b,
+            TeamCount = table.Count
+        };
+
+        if (a != null && b != null && a.TeamName != b.TeamName)
+        {
+            model.Odds = SeasonSimulator.GetMatchOdds(data.Matches, a.TeamName, b.TeamName);
+            model.Meetings = data.Matches
+                .Where(m => m.MatchStatus == PlayedStatus && m.GoalsHomeTeam.HasValue && m.GoalsAwayTeam.HasValue
+                            && ((m.HomeTeam.Trim() == a.TeamName && m.AwayTeam.Trim() == b.TeamName)
+                                || (m.HomeTeam.Trim() == b.TeamName && m.AwayTeam.Trim() == a.TeamName)))
+                .OrderByDescending(m => m.MatchDateTime)
+                .Select(m => ToResult(m, a.TeamName))
+                .ToList();
+        }
+
+        return model;
     }
 
     private static TeamMatchResult ToResult(Match m, string teamName)

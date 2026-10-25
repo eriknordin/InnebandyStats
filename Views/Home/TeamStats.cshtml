@@ -1,0 +1,231 @@
+@model InnebandyStats.Models.LeagueTeamStatsViewModel
+@{
+    ViewData["Title"] = Model.CompetitionName + " – Lagstatistik";
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    string F(double v) => v.ToString("0.#", inv);
+    string N(double? v, string format = "0.0") => v.HasValue ? v.Value.ToString(format) : "–";
+    string V(double? v) => v.HasValue ? v.Value.ToString("0.###", inv) : "";
+}
+
+<div class="container mt-4">
+    <h1 class="mb-1">
+        <a id="seriesLink" href="#" target="_blank" class="text-decoration-none">@Model.CompetitionName</a>
+        <button class="btn btn-sm ms-2 fav-btn fav-series-btn"
+                data-id="@Model.CompetitionId"
+                data-name="@Model.CompetitionName"
+                title="Favoritmarkera serien">☆</button>
+    </h1>
+
+    <partial name="_SeriesTabs" model="Model.CompetitionId" view-data='new ViewDataDictionary(ViewData) { ["SeriesTab"] = "TeamStats" }' />
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger">@Model.ErrorMessage</div>
+    }
+
+    @if (Model.Teams.Count == 0 && string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-info">Inga spelade matcher hittades för denna serie.</div>
+    }
+
+    @if (Model.Teams.Count > 0)
+    {
+        <p class="text-muted small mb-2">Klicka på en kolumnrubrik för att sortera.</p>
+        <div class="table-responsive mb-2">
+            <table class="table table-sm table-hover align-middle sortable" id="teamStatsTable">
+                <thead class="table-dark">
+                    <tr>
+                        <th data-sort="num" title="Tabellplacering">#</th>
+                        <th data-sort="text">Lag</th>
+                        <th class="text-center" data-sort="num" title="Matcher">M</th>
+                        <th class="text-center" data-sort="num" title="Poäng">P</th>
+                        <th class="text-center" data-sort="num" title="Förväntade poäng utifrån målskillnaden">xP</th>
+                        <th class="text-center" data-sort="num" title="Poäng jämfört med förväntat">±</th>
+                        <th class="text-center" data-sort="num" title="Gjorda mål per match">GM/m</th>
+                        <th class="text-center" data-sort="num" data-asc="1" title="Insläppta mål per match">IM/m</th>
+                        <th class="text-center" data-sort="num" title="Powerplay %">PP%</th>
+                        <th class="text-center" data-sort="num" title="Boxplay %">BP%</th>
+                        <th class="text-center" data-sort="num" data-asc="1" title="Utvisningsminuter per match">Utv/m</th>
+                        @if (Model.HasShots)
+                        {
+                            <th class="text-center" data-sort="num" title="Skott per match">Sk/m</th>
+                            <th class="text-center" data-sort="num" data-asc="1" title="Skott emot per match">SkE/m</th>
+                            <th class="text-center" data-sort="num" title="Skotteffektivitet">Sk%</th>
+                            <th class="text-center" data-sort="num" title="Räddningsprocent">Rä%</th>
+                            <th class="text-center" data-sort="num" title="Skotteffektivitet + räddningsprocent. Runt 100 är normalt.">PDO</th>
+                        }
+                        <th class="text-center" data-sort="num" title="Andel matcher där laget gjort första målet">1:a mål%</th>
+                        <th class="text-center" data-sort="num" title="Vinstprocent vid ledning efter två perioder">Håller%</th>
+                        <th class="text-center" data-sort="num" title="Poängprocent i matcher avgjorda med ett mål">1-mål P%</th>
+                        <th class="text-center" data-sort="num" title="Antal upphämtningar till vinst eller oavgjort">Upph.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in Model.Teams)
+                    {
+                        var s = t.Stats;
+                        var gs = t.GameStates;
+                        var diff = t.Projection?.PointsAboveExpected;
+                        <tr>
+                            <td data-value="@t.Rank">@t.Rank</td>
+                            <td class="text-nowrap" data-value="@t.TeamName">
+                                <a asp-action="TeamAnalysis" asp-route-competitionId="@Model.CompetitionId" asp-route-teamName="@t.TeamName"
+                                   class="text-decoration-none text-dark fw-semibold">@t.TeamName</a>
+                            </td>
+                            <td class="text-center" data-value="@(t.Table?.Played ?? 0)">@(t.Table?.Played ?? 0)</td>
+                            <td class="text-center fw-semibold" data-value="@(t.Table?.Points ?? 0)">@(t.Table?.Points ?? 0)</td>
+                            <td class="text-center" data-value="@V(t.Projection?.ExpectedPoints)">@N(t.Projection?.ExpectedPoints)</td>
+                            <td class="text-center @(diff >= 1 ? "diff-pos" : diff <= -1 ? "diff-neg" : "text-muted")" data-value="@V(diff)">@(diff > 0 ? "+" : "")@N(diff)</td>
+                            <td class="text-center" data-value="@V(t.GoalsForAverage)">@N(t.GoalsForAverage)</td>
+                            <td class="text-center" data-value="@V(t.GoalsAgainstAverage)">@N(t.GoalsAgainstAverage)</td>
+                            <td class="text-center" data-value="@V(s?.PowerPlayPercent)">@N(s?.PowerPlayPercent, "0")</td>
+                            <td class="text-center" data-value="@V(s?.PenaltyKillPercent)">@N(s?.PenaltyKillPercent, "0")</td>
+                            <td class="text-center" data-value="@V(s?.PenaltyMinutesAverage)">@N(s?.PenaltyMinutesAverage)</td>
+                            @if (Model.HasShots)
+                            {
+                                <td class="text-center" data-value="@V(s?.ShotsForAverage)">@N(s?.ShotsForAverage)</td>
+                                <td class="text-center" data-value="@V(s?.ShotsAgainstAverage)">@N(s?.ShotsAgainstAverage)</td>
+                                <td class="text-center" data-value="@V(s?.ShootingPercent)">@N(s?.ShootingPercent)</td>
+                                <td class="text-center" data-value="@V(s?.SavePercent)">@N(s?.SavePercent)</td>
+                                <td class="text-center" data-value="@V(t.Pdo)">@N(t.Pdo)</td>
+                            }
+                            <td class="text-center" data-value="@V(gs.ScoredFirstPercent)">@N(gs.ScoredFirstPercent, "0")</td>
+                            <td class="text-center" data-value="@V(gs.HoldLeadPercent)" title="@gs.LeadAfterP2">@N(gs.HoldLeadPercent, "0")</td>
+                            <td class="text-center" data-value="@V(gs.OneGoalGames.PointsPercent)" title="@gs.OneGoalGames">@N(gs.OneGoalGames.PointsPercent, "0")</td>
+                            <td class="text-center" data-value="@gs.Comebacks.Count">@gs.Comebacks.Count</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="text-muted small">
+            xP = förväntade poäng utifrån gjorda och insläppta mål. PP/BP = powerplay/boxplay. PDO = skotteffektivitet + räddningsprocent (runt 100 är normalt; högt tyder på flyt).
+            Matchlägen räknas på matcher där alla mål finns som händelser.
+        </p>
+
+        var withGoals = Model.Teams.Where(t => t.GoalsForAverage.HasValue && t.GoalsAgainstAverage.HasValue).ToList();
+        if (withGoals.Count >= 2)
+        {
+            const int width = 640, height = 420, left = 40, right = 16, top = 16, bottom = 40;
+            var minX = Math.Floor(withGoals.Min(t => t.GoalsForAverage!.Value) - 0.5);
+            var maxX = Math.Ceiling(withGoals.Max(t => t.GoalsForAverage!.Value) + 0.5);
+            var minY = Math.Floor(withGoals.Min(t => t.GoalsAgainstAverage!.Value) - 0.5);
+            var maxY = Math.Ceiling(withGoals.Max(t => t.GoalsAgainstAverage!.Value) + 0.5);
+            double X(double v) => left + (v - minX) / (maxX - minX) * (width - left - right);
+            // Få insläppta mål uppåt: bra lag hamnar uppe till höger
+            double Y(double v) => top + (v - minY) / (maxY - minY) * (height - top - bottom);
+            // Etiketter som skulle hamna på varandra flyttas nedåt
+            const double labelHeight = 12, charWidth = 6;
+            var labels = withGoals
+                .Select(t =>
+                {
+                    var x = X(t.GoalsForAverage!.Value);
+                    var y = Y(t.GoalsAgainstAverage!.Value);
+                    return (Team: t, X: x, Y: y, LabelY: y + 3, Anchor: x > width - 140 ? "end" : "start");
+                })
+                .OrderBy(d => d.Y)
+                .ToList();
+            for (var i = 0; i < labels.Count; i++)
+            {
+                double Left((LeagueTeamRow Team, double X, double Y, double LabelY, string Anchor) d) =>
+                    d.Anchor == "end" ? d.X - 7 - d.Team.TeamName.Length * charWidth : d.X + 7;
+                double Right((LeagueTeamRow Team, double X, double Y, double LabelY, string Anchor) d) =>
+                    d.Anchor == "end" ? d.X - 7 : d.X + 7 + d.Team.TeamName.Length * charWidth;
+
+                var current = labels[i];
+                bool moved;
+                do
+                {
+                    moved = false;
+                    foreach (var other in labels.Take(i))
+                    {
+                        var overlapX = Left(current) < Right(other) && Left(other) < Right(current);
+                        if (overlapX && Math.Abs(current.LabelY - other.LabelY) < labelHeight)
+                        {
+                            current.LabelY = other.LabelY + labelHeight;
+                            moved = true;
+                        }
+                    }
+                } while (moved);
+                labels[i] = current;
+            }
+            var avgFor = withGoals.Average(t => t.GoalsForAverage!.Value);
+            var avgAgainst = withGoals.Average(t => t.GoalsAgainstAverage!.Value);
+
+            <div class="card mt-4 mb-4">
+                <div class="card-header fw-semibold">Anfall och försvar <span class="text-muted fw-normal small">(mål per match)</span></div>
+                <div class="card-body">
+                    <svg class="chart-svg" viewBox="0 0 @width @height" role="img" aria-label="Gjorda mot insläppta mål per match">
+                        <line class="grid" x1="@F(X(avgFor))" x2="@F(X(avgFor))" y1="@top" y2="@(height - bottom)" stroke-dasharray="4 4" />
+                        <line class="grid" x1="@left" x2="@(width - right)" y1="@F(Y(avgAgainst))" y2="@F(Y(avgAgainst))" stroke-dasharray="4 4" />
+                        @for (var v = minX; v <= maxX; v++)
+                        {
+                            @:<text x="@F(X(v))" y="@(height - bottom + 16)" text-anchor="middle">@v</text>
+                        }
+                        @for (var v = minY; v <= maxY; v++)
+                        {
+                            @:<text x="@(left - 6)" y="@F(Y(v) + 4)" text-anchor="end">@v</text>
+                        }
+                        <text x="@(width - right)" y="@(height - 6)" text-anchor="end">Gjorda mål per match →</text>
+                        <text x="12" y="@top" transform="rotate(-90 12 @top)" text-anchor="end">← Insläppta mål per match</text>
+                        <text x="@(width - right - 4)" y="@(top + 12)" text-anchor="end" opacity="0.6">Bra anfall, bra försvar</text>
+                        @foreach (var dot in labels)
+                        {
+                            var t = dot.Team;
+                            <a href="@Url.Action("TeamAnalysis", "Home", new { competitionId = Model.CompetitionId, teamName = t.TeamName })">
+                                <circle class="dot" cx="@F(dot.X)" cy="@F(dot.Y)" r="5"><title>@t.TeamName: @t.GoalsForAverage!.Value.ToString("0.0") – @t.GoalsAgainstAverage!.Value.ToString("0.0")</title></circle>
+                                @if (Math.Abs(dot.LabelY - dot.Y) > 4)
+                                {
+                                    <line class="grid" x1="@F(dot.X)" y1="@F(dot.Y)" x2="@F(dot.X + (dot.Anchor == "end" ? -6 : 6))" y2="@F(dot.LabelY - 3)" />
+                                }
+                                <text class="dot-label" x="@F(dot.X + (dot.Anchor == "end" ? -7 : 7))" y="@F(dot.LabelY)" text-anchor="@dot.Anchor">@t.TeamName</text>
+                            </a>
+                        }
+                    </svg>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var seasonId = localStorage.getItem('selectedSeasonId') || '43';
+            var link = document.getElementById('seriesLink');
+            if (link) {
+                link.href = 'https://stats.innebandy.se/sasong/' + seasonId + '/serie/@Model.CompetitionId/serietabell';
+            }
+            initFavSeriesBtn(document.querySelector('.fav-series-btn'));
+
+            // Sortering: första klick ger "bäst först" (fallande, eller stigande för kolumner med data-asc)
+            var table = document.getElementById('teamStatsTable');
+            if (!table) return;
+            var headers = Array.from(table.querySelectorAll('th[data-sort]'));
+            headers.forEach(function (th, col) {
+                th.addEventListener('click', function () {
+                    var bestAsc = th.dataset.asc === '1' || th.dataset.sort === 'text' || col === 0;
+                    var asc = th.classList.contains('sorted-asc') ? false
+                        : th.classList.contains('sorted-desc') ? true
+                        : bestAsc;
+                    headers.forEach(function (h) { h.classList.remove('sorted-asc', 'sorted-desc'); });
+                    th.classList.add(asc ? 'sorted-asc' : 'sorted-desc');
+
+                    var tbody = table.tBodies[0];
+                    var rows = Array.from(tbody.rows);
+                    rows.sort(function (a, b) {
+                        var va = a.cells[col].dataset.value, vb = b.cells[col].dataset.value;
+                        if (th.dataset.sort === 'text')
+                            return asc ? va.localeCompare(vb, 'sv') : vb.localeCompare(va, 'sv');
+                        // Saknade värden hamnar alltid sist
+                        if (va === '' && vb === '') return 0;
+                        if (va === '') return 1;
+                        if (vb === '') return -1;
+                        return asc ? parseFloat(va) - parseFloat(vb) : parseFloat(vb) - parseFloat(va);
+                    });
+                    rows.forEach(function (r) { tbody.appendChild(r); });
+                });
+            });
+        });
+    </script>
+}

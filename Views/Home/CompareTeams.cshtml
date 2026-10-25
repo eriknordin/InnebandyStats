@@ -1,0 +1,260 @@
+@model InnebandyStats.Models.TeamComparisonViewModel
+@{
+    var a = Model.TeamA;
+    var b = Model.TeamB;
+    ViewData["Title"] = a != null && b != null ? $"{a.TeamName} – {b.TeamName}" : "Jämför lag";
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+
+    double? PerMatch(int? value, int? matches) => matches > 0 ? (double)value!.Value / matches!.Value : null;
+
+    // En jämförelserad: higherIsBetter = null betyder att ingen sida markeras
+    (string Label, double? A, double? B, string Format, bool? HigherIsBetter, string Suffix) Row(
+        string label, double? av, double? bv, string format = "0.0", bool? higherIsBetter = true, string suffix = "") =>
+        (label, av, bv, format, higherIsBetter, suffix);
+}
+
+<div class="container mt-4">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item">
+                <a asp-action="SeriesTable" asp-route-id="@Model.CompetitionId">@(string.IsNullOrEmpty(Model.CompetitionName) ? "Serie" : Model.CompetitionName)</a>
+            </li>
+            <li class="breadcrumb-item active">Jämför lag</li>
+        </ol>
+    </nav>
+
+    <h1 class="mb-3">Jämför lag</h1>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger">@Model.ErrorMessage</div>
+    }
+
+    @if (Model.AvailableTeams.Any())
+    {
+        <form method="get" asp-action="CompareTeams" class="row g-2 align-items-end mb-4">
+            <input type="hidden" name="competitionId" value="@Model.CompetitionId" />
+            <div class="col-5 col-md-4">
+                <label class="form-label small text-muted mb-1" for="teamA">Lag A (hemma)</label>
+                <select id="teamA" name="teamA" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Välj lag…</option>
+                    @foreach (var t in Model.AvailableTeams)
+                    {
+                        <option value="@t" selected="@(t == a?.TeamName)">@t</option>
+                    }
+                </select>
+            </div>
+            <div class="col-2 col-md-auto text-center">
+                @if (a != null && b != null)
+                {
+                    <a class="btn btn-sm btn-outline-secondary" title="Byt plats"
+                       asp-action="CompareTeams" asp-route-competitionId="@Model.CompetitionId" asp-route-teamA="@b.TeamName" asp-route-teamB="@a.TeamName">⇄</a>
+                }
+            </div>
+            <div class="col-5 col-md-4">
+                <label class="form-label small text-muted mb-1" for="teamB">Lag B (borta)</label>
+                <select id="teamB" name="teamB" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Välj lag…</option>
+                    @foreach (var t in Model.AvailableTeams)
+                    {
+                        <option value="@t" selected="@(t == b?.TeamName)">@t</option>
+                    }
+                </select>
+            </div>
+            <noscript><div class="col-auto"><button class="btn btn-sm btn-primary">Jämför</button></div></noscript>
+        </form>
+    }
+
+    @if (a == null || b == null)
+    {
+        <div class="alert alert-info">Välj två lag att jämföra.</div>
+    }
+    else if (a.TeamName == b.TeamName)
+    {
+        <div class="alert alert-info">Välj två olika lag.</div>
+    }
+    else
+    {
+        var sa = a.Stats;
+        var sb = b.Stats;
+        var ga = a.GameStates;
+        var gb = b.GameStates;
+        var hasShots = sa?.MatchesWithShots > 0 && sb?.MatchesWithShots > 0;
+        var hasProjection = a.Projection != null && b.Projection != null && a.Projection.RemainingMatches + b.Projection.RemainingMatches > 0;
+
+        var sections = new List<(string Title, List<(string Label, double? A, double? B, string Format, bool? HigherIsBetter, string Suffix)> Rows)>
+        {
+            ("Tabell", new()
+            {
+                Row("Placering", a.Rank > 0 ? a.Rank : null, b.Rank > 0 ? b.Rank : null, "0", false),
+                Row("Poäng", a.Table?.Points, b.Table?.Points, "0"),
+                Row("Matcher", a.Table?.Played, b.Table?.Played, "0", null),
+                Row("Poäng per match", PerMatch(a.Table?.Points, a.Table?.Played), PerMatch(b.Table?.Points, b.Table?.Played), "0.00"),
+                Row("Målskillnad", a.Table?.GoalDiff, b.Table?.GoalDiff, "+0;-0;0"),
+                Row("xP (förväntade poäng)", a.Projection?.ExpectedPoints, b.Projection?.ExpectedPoints, "0.0", null),
+                Row("Poäng över förväntat", a.Projection?.PointsAboveExpected, b.Projection?.PointsAboveExpected, "+0.0;-0.0;0.0", null)
+            }),
+            ("Spel", new()
+            {
+                Row("Gjorda mål per match", PerMatch(sa?.GoalsFor, sa?.Matches), PerMatch(sb?.GoalsFor, sb?.Matches)),
+                Row("Insläppta mål per match", PerMatch(sa?.GoalsAgainst, sa?.Matches), PerMatch(sb?.GoalsAgainst, sb?.Matches), "0.0", false),
+                Row("Powerplay", sa?.PowerPlayPercent, sb?.PowerPlayPercent, "0", true, " %"),
+                Row("Boxplay", sa?.PenaltyKillPercent, sb?.PenaltyKillPercent, "0", true, " %"),
+                Row("Utvisningsminuter per match", sa?.PenaltyMinutesAverage, sb?.PenaltyMinutesAverage, "0.0", false)
+            }),
+            ("Matchlägen", new()
+            {
+                Row("Gör första målet", ga.ScoredFirstPercent, gb.ScoredFirstPercent, "0", true, " %"),
+                Row("Vinner vid ledning efter P2", ga.HoldLeadPercent, gb.HoldLeadPercent, "0", true, " %"),
+                Row("Poäng % vid underläge efter P2", ga.TrailAfterP2.PointsPercent, gb.TrailAfterP2.PointsPercent, "0", true, " %"),
+                Row("Poäng % i enmålsmatcher", ga.OneGoalGames.PointsPercent, gb.OneGoalGames.PointsPercent, "0", true, " %"),
+                Row("Svarar inom 2 min", ga.QuickResponsePercent, gb.QuickResponsePercent, "0", true, " %"),
+                Row("Upphämtningar", ga.Comebacks.Count, gb.Comebacks.Count, "0"),
+                Row("Tappade ledningar", ga.BlownLeads.Count, gb.BlownLeads.Count, "0", false)
+            })
+        };
+
+        if (hasShots)
+        {
+            sections[1].Rows.AddRange(new[]
+            {
+                Row("Skott per match", sa!.ShotsForAverage, sb!.ShotsForAverage),
+                Row("Skott emot per match", sa.ShotsAgainstAverage, sb.ShotsAgainstAverage, "0.0", false),
+                Row("Skotteffektivitet", sa.ShootingPercent, sb.ShootingPercent, "0.0", true, " %"),
+                Row("Räddningsprocent", sa.SavePercent, sb.SavePercent, "0.0", true, " %")
+            });
+        }
+
+        if (hasProjection)
+        {
+            sections.Add(("Prognos", new()
+            {
+                Row("Förväntad slutplacering", a.Projection!.AverageFinish, b.Projection!.AverageFinish, "0.0", false),
+                Row("Prognos poäng", a.Projection.ProjectedPoints, b.Projection.ProjectedPoints, "0"),
+                Row("Snittplacering kvarvarande motst.", a.Projection.RemainingOpponentRank, b.Projection.RemainingOpponentRank, "0.0", true)
+            }));
+        }
+
+        <div class="row g-4">
+            <div class="col-lg-7">
+                @if (Model.Odds != null)
+                {
+                    var o = Model.Odds;
+                    string P(double v) => (v * 100).ToString("0");
+                    <div class="card mb-4">
+                        <div class="card-header fw-semibold">Om de möts <span class="text-muted fw-normal small">(@a.TeamName hemma)</span></div>
+                        <div class="card-body">
+                            <div class="odds-bar mb-2">
+                                <div class="home" style="width:@((o.HomeWin * 100).ToString("0.#", inv))%" title="@a.TeamName vinner">@P(o.HomeWin) %</div>
+                                <div class="draw" style="width:@((o.Draw * 100).ToString("0.#", inv))%" title="Oavgjort">@P(o.Draw) %</div>
+                                <div class="away" style="width:@((o.AwayWin * 100).ToString("0.#", inv))%" title="@b.TeamName vinner">@P(o.AwayWin) %</div>
+                            </div>
+                            <div class="d-flex justify-content-between small">
+                                <span>@a.TeamName</span><span class="text-muted">Oavgjort</span><span>@b.TeamName</span>
+                            </div>
+                            <div class="small text-muted mt-2">
+                                Förväntat resultat ungefär @o.ExpectedHomeGoals.ToString("0.0")–@o.ExpectedAwayGoals.ToString("0.0"), utifrån lagens målsnitt i serien.
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <div class="compare-row border-bottom-0">
+                            <div class="home">
+                                <a asp-action="TeamAnalysis" asp-route-competitionId="@Model.CompetitionId" asp-route-teamName="@a.TeamName" class="text-reset">@a.TeamName</a>
+                                @if (a.Table != null)
+                                {
+                                    <div><span class="form-dots">@foreach (var r in a.Table.Form) { <span class="form-dot @r">@r</span> }</span></div>
+                                }
+                            </div>
+                            <div class="label">Form</div>
+                            <div class="away">
+                                <a asp-action="TeamAnalysis" asp-route-competitionId="@Model.CompetitionId" asp-route-teamName="@b.TeamName" class="text-reset">@b.TeamName</a>
+                                @if (b.Table != null)
+                                {
+                                    <div><span class="form-dots">@foreach (var r in b.Table.Form) { <span class="form-dot @r">@r</span> }</span></div>
+                                }
+                            </div>
+                        </div>
+
+                        @foreach (var group in sections)
+                        {
+                            <div class="match-day mt-3">@group.Title</div>
+                            @foreach (var row in group.Rows)
+                            {
+                                var aBetter = row.HigherIsBetter.HasValue && row.A.HasValue && row.B.HasValue && row.A != row.B
+                                              && (row.A > row.B) == row.HigherIsBetter.Value;
+                                var bBetter = row.HigherIsBetter.HasValue && row.A.HasValue && row.B.HasValue && row.A != row.B && !aBetter;
+                                <div class="compare-row">
+                                    <div class="home @(aBetter ? "better" : "")">@(row.A.HasValue ? row.A.Value.ToString(row.Format) + row.Suffix : "–")</div>
+                                    <div class="label">@row.Label</div>
+                                    <div class="away @(bBetter ? "better" : "")">@(row.B.HasValue ? row.B.Value.ToString(row.Format) + row.Suffix : "–")</div>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-5">
+                <div class="card mb-4">
+                    <div class="card-header fw-semibold">Inbördes möten</div>
+                    <div class="card-body p-0">
+                        @if (!Model.Meetings.Any())
+                        {
+                            <div class="p-3 small text-muted">Lagen har inte mötts i serien ännu.</div>
+                        }
+                        else
+                        {
+                            <table class="table table-sm mb-0">
+                                <tbody>
+                                    @foreach (var m in Model.Meetings)
+                                    {
+                                        <tr>
+                                            <td class="ps-3 text-muted small text-nowrap">@m.MatchDateTime.ToString("yyyy-MM-dd")</td>
+                                            <td class="small">@(m.IsHome ? $"{a.TeamName} hemma" : $"{b.TeamName} hemma")</td>
+                                            <td class="text-end pe-3 text-nowrap">
+                                                <a asp-action="MatchView" asp-route-id="@m.MatchID" asp-route-competitionId="@Model.CompetitionId"
+                                                   class="badge @m.ResultBadgeClass text-decoration-none">@m.GoalsFor–@m.GoalsAgainst</a>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            <div class="px-3 py-2 small text-muted">Resultat sett från @a.TeamName.</div>
+                        }
+                    </div>
+                </div>
+
+                @foreach (var side in new[] { a, b })
+                {
+                    @if (side.TopPlayers.Any())
+                    {
+                        <div class="card mb-4">
+                            <div class="card-header fw-semibold">Poängbäst i @side.TeamName</div>
+                            <div class="card-body p-0">
+                                <table class="table table-sm mb-0">
+                                    <tbody>
+                                        @foreach (var p in side.TopPlayers)
+                                        {
+                                            <tr>
+                                                <td class="ps-3">
+                                                    <a asp-action="Player" asp-route-id="@p.PlayerID" asp-route-competitionId="@Model.CompetitionId" class="text-decoration-none text-dark">@p.Name</a>
+                                                </td>
+                                                <td class="text-end pe-3 text-nowrap">@p.Goals+@p.Assists = <strong>@p.Points</strong></td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+
+        <p class="small text-muted">Grönt markerar det bättre värdet. Matchlägen räknas på matcher där alla mål finns som händelser.</p>
+    }
+</div>

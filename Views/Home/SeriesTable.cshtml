@@ -12,20 +12,7 @@
                 title="Favoritmarkera serien">☆</button>
     </h1>
 
-    <ul class="nav nav-tabs mb-4">
-        <li class="nav-item">
-            <a class="nav-link active" href="#">Serietabell</a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" asp-action="Standings" asp-route-id="@Model.CompetitionId">Spelarlista</a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" asp-action="Matches" asp-route-id="@Model.CompetitionId">Matcher</a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" asp-action="Leaders" asp-route-id="@Model.CompetitionId">Topplistor</a>
-        </li>
-    </ul>
+    <partial name="_SeriesTabs" model="Model.CompetitionId" view-data='new ViewDataDictionary(ViewData) { ["SeriesTab"] = "SeriesTable" }' />
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
@@ -147,6 +134,79 @@
             </table>
         </div>
         <p class="text-muted small">M=Matcher, V=Vinster, O=Oavgjorda, F=Förluster, GM=Gjorda mål, IM=Insläppta mål, +/-=Målskillnad, P=Poäng. Form = senaste fem matcherna.</p>
+    }
+
+    @if (Model.Projection != null && Model.Projection.Teams.Any(t => t.Played > 0))
+    {
+        var proj = Model.Projection;
+        var showOdds = proj.RemainingMatches > 0;
+        var n = proj.Teams.Count;
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        string OddsText(double p) => p <= 0 ? "" : p < 0.005 ? "<1" : (p * 100).ToString("0");
+
+        <div class="card mt-4">
+            <div class="card-header fw-semibold">
+                @(showOdds ? "Prognos för slutplacering" : "Förväntade poäng")
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0 align-middle odds-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3">#</th>
+                                <th>Lag</th>
+                                <th class="text-center" title="Poäng">P</th>
+                                <th class="text-center" title="Förväntade poäng utifrån gjorda och insläppta mål">xP</th>
+                                <th class="text-center" title="Poäng jämfört med förväntat">±</th>
+                                @if (showOdds)
+                                {
+                                    <th class="text-center" title="Snitt av slutpoäng i simuleringarna">Prognos</th>
+                                    @for (var pos = 1; pos <= n; pos++)
+                                    {
+                                        <th class="pos">@pos</th>
+                                    }
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var t in proj.Teams)
+                            {
+                                var diff = t.PointsAboveExpected;
+                                <tr>
+                                    <td class="ps-3">@t.Rank</td>
+                                    <td class="text-nowrap">
+                                        <a asp-action="TeamAnalysis" asp-route-competitionId="@Model.CompetitionId" asp-route-teamName="@t.TeamName"
+                                           class="text-decoration-none text-dark fw-semibold">@t.TeamName</a>
+                                    </td>
+                                    <td class="text-center">@t.Points</td>
+                                    <td class="text-center">@t.ExpectedPoints.ToString("0.0")</td>
+                                    <td class="text-center @(diff >= 1 ? "diff-pos" : diff <= -1 ? "diff-neg" : "text-muted")">@(diff > 0 ? "+" : "")@diff.ToString("0.0")</td>
+                                    @if (showOdds)
+                                    {
+                                        <td class="text-center fw-semibold">@t.ProjectedPoints.ToString("0")</td>
+                                        @for (var pos = 0; pos < n; pos++)
+                                        {
+                                            var p = t.PositionOdds[pos];
+                                            var alpha = p <= 0 ? 0 : 0.08 + 0.85 * p;
+                                            <td class="odds" style="background: rgba(13,110,253,@alpha.ToString("0.###", inv)); @(p > 0.45 ? "color:#fff;" : "")"
+                                                title="@t.TeamName slutar @(pos + 1): @((p * 100).ToString("0.0")) %">@OddsText(p)</td>
+                                        }
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer small text-muted">
+                <strong>xP</strong> = förväntade poäng i spelade matcher utifrån lagens målskapande (Poissonmodell).
+                Positivt ± betyder fler poäng än målskillnaden motiverar.
+                @if (showOdds)
+                {
+                    <span>Prognosen bygger på @proj.Simulations.ToString("N0", new System.Globalization.CultureInfo("sv-SE")) simuleringar av de @proj.RemainingMatches återstående matcherna; siffrorna är procent.</span>
+                }
+            </div>
+        </div>
     }
 
     @if (Model.History != null)

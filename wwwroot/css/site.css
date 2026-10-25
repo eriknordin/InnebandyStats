@@ -84,3 +84,43 @@ body {
 .match-row .mr-comp { grid-column: 2 / -1; font-size: .75rem; color: var(--bs-secondary-color); margin-top: -.3rem; }
 .match-row .fav-team { font-weight: 700; }
 .match-empty { color: var(--bs-secondary-color); font-size: .9rem; padding: .5rem 0; }
+
+/* Serieflikar: scrolla i sidled på smala skärmar */
+.series-tabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.series-tabs::-webkit-scrollbar { display: none; }
+.series-tabs .nav-link { white-space: nowrap; }
+
+/* Prognos: sannolikhet per slutplacering */
+.odds-table td.odds { text-align: center; font-size: .75rem; font-variant-numeric: tabular-nums; min-width: 2.1rem; padding: .3rem .15rem; }
+.odds-table th.pos { text-align: center; font-size: .75rem; min-width: 2.1rem; padding: .3rem .15rem; }
+.diff-pos { color: #198754; }
+.diff-neg { color: #dc3545; }
+
+/* Vinstchans-stapel */
+.odds-bar { display: flex; height: 1.6rem; border-radius: .3rem; overflow: hidden; font-size: .75rem; font-weight: 600; color: #fff; }
+.odds-bar > div { display: flex; align-items: center; justify-content: center; min-width: 0; overflow: hidden; white-space: nowrap; }
+.odds-bar .home { background: var(--bs-primary); }
+.odds-bar .draw { background: #6c757d; }
+.odds-bar .away { background: #fd7e14; }
+
+/* Matchlägen */
+.state-grid { display: grid; grid-template-columns: auto repeat(3, 1fr); gap: .25rem .75rem; align-items: center; font-size: .9rem; }
+.state-grid .hdr { font-size: .75rem; color: var(--bs-secondary-color); text-align: center; }
+.state-grid .lbl { color: var(--bs-secondary-color); }
+.state-grid .cell { text-align: center; font-variant-numeric: tabular-nums; }
+.state-grid .cell .pct { display: block; font-size: .75rem; color: var(--bs-secondary-color); }
+
+/* Sorterbar tabell */
+table.sortable th[data-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
+table.sortable th[data-sort]::after { content: " ↕"; opacity: .3; font-size: .75em; }
+table.sortable th.sorted-asc::after { content: " ▲"; opacity: .8; }
+table.sortable th.sorted-desc::after { content: " ▼"; opacity: .8; }
+.chart-svg .dot { fill: var(--bs-primary); opacity: .85; }
+.chart-svg .dot-label { font-size: 10px; fill: var(--bs-body-color); paint-order: stroke; stroke: var(--bs-body-bg); stroke-width: 3px; }
+.chart-svg .trend-for { fill: none; stroke: #198754; stroke-width: 2.5; }
+.chart-svg .trend-against { fill: none; stroke: #dc3545; stroke-width: 2.5; }
+.chart-svg .pt-for { fill: #198754; opacity: .35; }
+.chart-svg .pt-against { fill: #dc3545; opacity: .35; }
+.chart-svg .bar-odds { fill: var(--bs-primary); }
+.chart-svg .bar-odds.current { fill: #fd7e14; }
+.chart-svg a, .chart-svg a text { text-decoration: none; }

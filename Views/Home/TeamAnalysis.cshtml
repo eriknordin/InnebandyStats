@@ -28,6 +28,21 @@
                 data-competition-name="@Model.CompetitionName">
             + Samling
         </button>
+        @if (Model.OtherTeams.Any())
+        {
+            <form method="get" asp-action="CompareTeams" class="ms-md-auto d-flex gap-1">
+                <input type="hidden" name="competitionId" value="@Model.CompetitionId" />
+                <input type="hidden" name="teamA" value="@Model.TeamName" />
+                <select name="teamB" class="form-select form-select-sm" aria-label="Jämför med lag" onchange="if (this.value) this.form.submit()">
+                    <option value="">Jämför med…</option>
+                    @foreach (var t in Model.OtherTeams)
+                    {
+                        <option value="@t">@t</option>
+                    }
+                </select>
+                <noscript><button class="btn btn-sm btn-outline-secondary">Jämför</button></noscript>
+            </form>
+        }
     </div>
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
@@ -494,6 +509,8 @@
                 </div>
             </div>
         }
+
+        <partial name="_TeamInsights" model="Model" />
     }
 </div>
 

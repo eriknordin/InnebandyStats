@@ -71,6 +71,11 @@ public class TeamAnalysisViewModel
     public double? LeaguePenaltyKillPercent { get; set; }
     public List<ScoringDuo> Duos { get; set; } = new();
     public List<HeadToHeadRecord> HeadToHead { get; set; } = new();
+    public TeamInsights? Insights { get; set; }
+    public TeamProjection? Projection { get; set; }
+    public int TeamCount { get; set; }
+    public int RemainingLeagueMatches { get; set; }
+    public List<string> OtherTeams { get; set; } = new();
 
     public int TotalPlayed => HomePlayed + AwayPlayed;
     public string? ErrorMessage { get; set; }

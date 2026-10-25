@@ -1,0 +1,412 @@
+@model InnebandyStats.Models.TeamAnalysisViewModel
+@{
+    var ins = Model.Insights;
+    var proj = Model.Projection;
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    var sv = new System.Globalization.CultureInfo("sv-SE");
+    string F(double v) => v.ToString("0.#", inv);
+    string Pct(double? v) => v.HasValue ? v.Value.ToString("0") + " %" : "–";
+}
+
+@if (ins == null)
+{
+    return;
+}
+
+@* ── Prognos och matchlägen ─────────────────────────────────────────────── *@
+<div class="row g-4">
+    @if (proj != null && proj.Played > 0)
+    {
+        var showOdds = Model.RemainingLeagueMatches > 0;
+        var n = proj.PositionOdds.Length;
+        var middle = (Model.TeamCount + 1) / 2.0;
+        var diff = proj.PointsAboveExpected;
+
+        <div class="col-lg-6">
+            <div class="card mb-4">
+                <div class="card-header fw-semibold">Prognos</div>
+                <div class="card-body">
+                    <div class="row g-3 text-center mb-2">
+                        @if (showOdds)
+                        {
+                            <div class="col-6 col-md-3">
+                                <div class="stat-tile">
+                                    <div class="value">@proj.AverageFinish.ToString("0.0")</div>
+                                    <div class="label">Förväntad slutplacering</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="stat-tile">
+                                    <div class="value">@proj.ProjectedPoints.ToString("0")</div>
+                                    <div class="label">Prognos poäng</div>
+                                </div>
+                            </div>
+                        }
+                        <div class="col-6 col-md-3">
+                            <div class="stat-tile">
+                                <div class="value">@proj.ExpectedPoints.ToString("0.0")</div>
+                                <div class="label">xP (har @proj.Points)</div>
+                                <div class="small @(diff >= 1 ? "diff-pos" : diff <= -1 ? "diff-neg" : "text-muted")">
+                                    @(diff >= 1 ? "Flyt: " : diff <= -1 ? "Otur: " : "")@(diff > 0 ? "+" : "")@diff.ToString("0.0")
+                                </div>
+                            </div>
+                        </div>
+                        @if (proj.RemainingOpponentRank.HasValue)
+                        {
+                            var r = proj.RemainingOpponentRank.Value;
+                            <div class="col-6 col-md-3">
+                                <div class="stat-tile">
+                                    <div class="value">@r.ToString("0.0")</div>
+                                    <div class="label">Snittplacering kvarvarande motst. (@proj.RemainingMatches m)</div>
+                                    <div class="small text-muted">@(r < middle - 0.5 ? "Tufft schema" : r > middle + 0.5 ? "Lättare schema" : "Normalt schema")</div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    @if (showOdds && n > 0)
+                    {
+                        const int width = 480, height = 150, left = 8, right = 8, top = 18, bottom = 22;
+                        var slot = (width - left - right) / (double)n;
+                        var maxP = Math.Max(0.05, proj.PositionOdds.Max());
+                        <svg class="chart-svg" viewBox="0 0 @width @height" role="img" aria-label="Sannolikhet per slutplacering">
+                            <line class="grid" x1="@left" x2="@(width - right)" y1="@(height - bottom)" y2="@(height - bottom)" />
+                            @for (var i = 0; i < n; i++)
+                            {
+                                var p = proj.PositionOdds[i];
+                                var h = p / maxP * (height - top - bottom);
+                                var x = left + i * slot + slot * 0.12;
+                                <rect class="bar-odds @(i + 1 == proj.Rank ? "current" : "")" x="@F(x)" y="@F(height - bottom - h)" width="@F(slot * 0.76)" height="@F(h)">
+                                    <title>Plats @(i + 1): @((p * 100).ToString("0.0")) %</title>
+                                </rect>
+                                @if (p >= 0.01)
+                                {
+                                    @:<text x="@F(x + slot * 0.38)" y="@F(height - bottom - h - 4)" text-anchor="middle">@((p * 100).ToString("0"))</text>
+                                }
+                                @:<text x="@F(x + slot * 0.38)" y="@(height - 6)" text-anchor="middle">@(i + 1)</text>
+                            }
+                        </svg>
+                        <div class="small text-muted">
+                            Procent per slutplacering efter @SeasonSimulatorText() simuleringar. Orange = nuvarande placering.
+                        </div>
+                    }
+                    else if (!showOdds)
+                    {
+                        <div class="small text-muted">Serien är färdigspelad.</div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (ins.GameStates.MatchesAnalyzed > 0)
+    {
+        var gs = ins.GameStates;
+        <div class="col-lg-6">
+            <div class="card mb-4">
+                <div class="card-header fw-semibold">
+                    Matchlägen <span class="text-muted fw-normal small">(@gs.MatchesAnalyzed matcher med fullständiga målhändelser)</span>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 text-center mb-3">
+                        <div class="col-4">
+                            <div class="stat-tile">
+                                <div class="value">@Pct(gs.ScoredFirstPercent)</div>
+                                <div class="label">Gör första målet</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="stat-tile">
+                                <div class="value">@Pct(gs.HoldLeadPercent)</div>
+                                <div class="label">Vinner vid ledning efter P2</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="stat-tile">
+                                <div class="value">@Pct(gs.QuickResponsePercent)</div>
+                                <div class="label">Svarar inom 2 min (@gs.QuickResponses/@gs.GoalsConceded)</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="state-grid mb-2">
+                        <div></div><div class="hdr">V-O-F</div><div class="hdr">Matcher</div><div class="hdr">Poäng %</div>
+                        @foreach (var (label, rec) in new[]
+                        {
+                            ("Gör första målet", gs.ScoredFirst),
+                            ("Släpper in första", gs.ConcededFirst),
+                            ("Leder efter P1", gs.LeadAfterP1),
+                            ("Lika efter P1", gs.TiedAfterP1),
+                            ("Under efter P1", gs.TrailAfterP1),
+                            ("Leder efter P2", gs.LeadAfterP2),
+                            ("Lika efter P2", gs.TiedAfterP2),
+                            ("Under efter P2", gs.TrailAfterP2),
+                            ("Avgjort med 1 mål", gs.OneGoalGames),
+                            ("Avgjort med 4+ mål", gs.Blowouts)
+                        })
+                        {
+                            <div class="lbl">@label</div>
+                            <div class="cell fw-semibold">@(rec.Total > 0 ? rec.ToString() : "–")</div>
+                            <div class="cell">@rec.Total</div>
+                            <div class="cell">@Pct(rec.PointsPercent)</div>
+                        }
+                    </div>
+
+                    @if (gs.Comebacks.Any() || gs.BlownLeads.Any())
+                    {
+                        <div class="row g-3 mt-1">
+                            @foreach (var (title, list, word) in new[] { ("Upphämtningar", gs.Comebacks, "under"), ("Tappade ledningar", gs.BlownLeads, "ledde") })
+                            {
+                                <div class="col-sm-6">
+                                    <div class="fw-semibold small mb-1">@title (@list.Count)</div>
+                                    @if (!list.Any())
+                                    {
+                                        <div class="small text-muted">Inga</div>
+                                    }
+                                    @foreach (var c in list.Take(5))
+                                    {
+                                        <a asp-action="MatchView" asp-route-id="@c.Match.MatchID" asp-route-competitionId="@Model.CompetitionId"
+                                           class="d-flex justify-content-between small text-decoration-none text-reset border-bottom py-1">
+                                            <span class="text-truncate me-2"><span class="text-muted">@(c.Match.IsHome ? "H" : "B")</span> @c.Match.Opponent</span>
+                                            <span class="text-nowrap">
+                                                <span class="text-muted">@word @c.Margin →</span>
+                                                <span class="badge @c.Match.ResultBadgeClass">@c.Match.GoalsFor–@c.Match.GoalsAgainst</span>
+                                            </span>
+                                        </a>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@* ── Trend och motstånd ─────────────────────────────────────────────────── *@
+<div class="row g-4">
+    @if (ins.Trend.Count >= 2)
+    {
+        const int width = 480, height = 200, left = 26, right = 8, top = 10, bottom = 24;
+        var maxGoals = Math.Max(4, ins.Trend.Max(t => Math.Max(t.GoalsFor, t.GoalsAgainst)));
+        var stepX = (width - left - right) / (double)(ins.Trend.Count - 1);
+        double X(int i) => left + i * stepX;
+        double Y(double v) => top + (height - top - bottom) * (1 - v / maxGoals);
+        var forLine = string.Join(" ", ins.Trend.Select((t, i) => $"{F(X(i))},{F(Y(t.RollingFor))}"));
+        var againstLine = string.Join(" ", ins.Trend.Select((t, i) => $"{F(X(i))},{F(Y(t.RollingAgainst))}"));
+        var gridStep = maxGoals > 8 ? 4 : 2;
+
+        <div class="col-lg-6">
+            <div class="card mb-4">
+                <div class="card-header fw-semibold">Formkurva <span class="text-muted fw-normal small">(rullande snitt, 5 matcher)</span></div>
+                <div class="card-body">
+                    <svg class="chart-svg" viewBox="0 0 @width @height" role="img" aria-label="Gjorda och insläppta mål över säsongen">
+                        @for (var g = 0; g <= maxGoals; g += gridStep)
+                        {
+                            <line class="grid" x1="@left" x2="@(width - right)" y1="@F(Y(g))" y2="@F(Y(g))" opacity="0.5" />
+                            @:<text x="@(left - 4)" y="@F(Y(g) + 4)" text-anchor="end">@g</text>
+                        }
+                        @for (var i = 0; i < ins.Trend.Count; i++)
+                        {
+                            var t = ins.Trend[i];
+                            <circle class="pt-for" cx="@F(X(i))" cy="@F(Y(t.GoalsFor))" r="3"><title>@t.MatchDateTime.ToString("d MMM", sv) mot @t.Opponent: @t.GoalsFor–@t.GoalsAgainst</title></circle>
+                            <circle class="pt-against" cx="@F(X(i))" cy="@F(Y(t.GoalsAgainst))" r="3"><title>@t.MatchDateTime.ToString("d MMM", sv) mot @t.Opponent: @t.GoalsFor–@t.GoalsAgainst</title></circle>
+                        }
+                        <polyline class="trend-for" points="@forLine" />
+                        <polyline class="trend-against" points="@againstLine" />
+                        <text x="@left" y="@(height - 6)">@ins.Trend[0].MatchDateTime.ToString("d MMM", sv)</text>
+                        <text x="@(width - right)" y="@(height - 6)" text-anchor="end">@ins.Trend[^1].MatchDateTime.ToString("d MMM", sv)</text>
+                    </svg>
+                    <div class="d-flex justify-content-center gap-3 small">
+                        <span><span class="form-dot V" style="width:.8rem;height:.8rem;"></span> Gjorda</span>
+                        <span><span class="form-dot F" style="width:.8rem;height:.8rem;"></span> Insläppta</span>
+                        <span class="text-muted">Prickar = enskilda matcher</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="col-lg-6">
+        @if (ins.VsTop.Total + ins.VsMiddle.Total + ins.VsBottom.Total > 0)
+        {
+            <div class="card mb-4">
+                <div class="card-header fw-semibold">Mot topp, mitten och botten <span class="text-muted fw-normal small">(nuvarande tabell)</span></div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0 text-center">
+                        <thead class="table-light">
+                            <tr><th class="text-start ps-3">Motstånd</th><th>V-O-F</th><th>Poäng</th><th>Poäng %</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var (label, rec) in new[] { ("Topplag", ins.VsTop), ("Mittenlag", ins.VsMiddle), ("Bottenlag", ins.VsBottom) })
+                            {
+                                <tr>
+                                    <td class="text-start ps-3">@label</td>
+                                    <td>@(rec.Total > 0 ? rec.ToString() : "–")</td>
+                                    <td>@rec.Points</td>
+                                    <td>@Pct(rec.PointsPercent)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
+        @if (ins.Depth.TeamGoals > 0)
+        {
+            var d = ins.Depth;
+            <div class="card mb-4">
+                <div class="card-header fw-semibold">Bredd i laget</div>
+                <div class="card-body">
+                    <div class="row g-3 text-center">
+                        <div class="col-4">
+                            <div class="stat-tile">
+                                <div class="value">@d.Scorers</div>
+                                <div class="label">Olika målskyttar</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="stat-tile">
+                                <div class="value">@d.PointGetters</div>
+                                <div class="label">Spelare med poäng</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="stat-tile">
+                                <div class="value">@Pct(d.TopThreeGoalShare)</div>
+                                <div class="label">Av målen gjorda av topp 3</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="small text-muted mt-2">
+                        Topp 3:
+                        @for (var i = 0; i < d.TopScorers.Count; i++)
+                        {
+                            var p = d.TopScorers[i];
+                            <a asp-action="Player" asp-route-id="@p.PlayerID" asp-route-competitionId="@Model.CompetitionId" class="text-reset">@p.Name</a>@:&nbsp;(@p.Goals)@(i < d.TopScorers.Count - 1 ? ", " : "")
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@* ── Disciplin och trupp ────────────────────────────────────────────────── *@
+<div class="row g-4">
+    @if (ins.Discipline.Matches > 0)
+    {
+        var dis = ins.Discipline;
+        var showOt = dis.ByPeriod[3] > 0;
+        <div class="col-lg-6">
+            <div class="card mb-4">
+                <div class="card-header fw-semibold">Disciplin</div>
+                <div class="card-body">
+                    <div class="row g-3 text-center mb-3">
+                        <div class="col-4">
+                            <div class="stat-tile">
+                                <div class="value">@dis.PenaltiesPerMatch.ToString("0.0")</div>
+                                <div class="label">Utvisningar per match</div>
+                                @if (dis.LeaguePenaltiesPerMatch.HasValue)
+                                {
+                                    <div class="small text-muted">Serien: @dis.LeaguePenaltiesPerMatch.Value.ToString("0.0")</div>
+                                }
+                            </div>
+                        </div>
+                        <div class="col-8">
+                            <table class="table table-sm mb-0 text-center">
+                                <thead class="table-light"><tr><th>P1</th><th>P2</th><th>P3</th>@if (showOt) { <th>FL</th> }</tr></thead>
+                                <tbody><tr>@for (var p = 0; p < 3; p++) { <td>@dis.ByPeriod[p]</td> }@if (showOt) { <td>@dis.ByPeriod[3]</td> }</tr></tbody>
+                            </table>
+                            <div class="small text-muted mt-1">Utvisningar per period</div>
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        @if (dis.CommonTypes.Any())
+                        {
+                            <div class="col-sm-6">
+                                <div class="fw-semibold small mb-1">Vanligaste utvisningar</div>
+                                @foreach (var (name, count) in dis.CommonTypes)
+                                {
+                                    <div class="d-flex justify-content-between small border-bottom py-1"><span class="text-truncate me-2">@name</span><span>@count</span></div>
+                                }
+                            </div>
+                        }
+                        @if (dis.TopOffenders.Any())
+                        {
+                            <div class="col-sm-6">
+                                <div class="fw-semibold small mb-1">Flest utvisningsminuter</div>
+                                @foreach (var (playerId, name, minutes) in dis.TopOffenders)
+                                {
+                                    <div class="d-flex justify-content-between small border-bottom py-1">
+                                        <a asp-action="Player" asp-route-id="@playerId" asp-route-competitionId="@Model.CompetitionId" class="text-reset text-truncate me-2">@name</a>
+                                        <span>@minutes min</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (ins.Squad.PlayersUsed > 0)
+    {
+        var sq = ins.Squad;
+        <div class="col-lg-6">
+            <div class="card mb-4">
+                <div class="card-header fw-semibold">Trupp <span class="text-muted fw-normal small">(@sq.MatchesWithLineup matcher med laguppställning)</span></div>
+                <div class="card-body">
+                    <div class="row g-3 text-center mb-3">
+                        <div class="col-4">
+                            <div class="stat-tile">
+                                <div class="value">@sq.PlayersUsed</div>
+                                <div class="label">Spelare använda</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="stat-tile">
+                                <div class="value">@(sq.AverageAge?.ToString("0.0") ?? "–")</div>
+                                <div class="label">Snittålder i matchtrupp</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="stat-tile">
+                                <div class="value">@sq.Newcomers.Count</div>
+                                <div class="label">Nya senaste @sq.NewcomerWindow matcherna</div>
+                            </div>
+                        </div>
+                    </div>
+                    @if (sq.Youngest.HasValue && sq.Oldest.HasValue)
+                    {
+                        <div class="small mb-2">
+                            <span class="text-muted">Yngst:</span>
+                            <a asp-action="Player" asp-route-id="@sq.Youngest.Value.PlayerID" asp-route-competitionId="@Model.CompetitionId" class="text-reset">@sq.Youngest.Value.Name</a> (@sq.Youngest.Value.Age år)
+                            · <span class="text-muted">Äldst:</span>
+                            <a asp-action="Player" asp-route-id="@sq.Oldest.Value.PlayerID" asp-route-competitionId="@Model.CompetitionId" class="text-reset">@sq.Oldest.Value.Name</a> (@sq.Oldest.Value.Age år)
+                        </div>
+                    }
+                    @if (sq.Newcomers.Any())
+                    {
+                        <div class="fw-semibold small mb-1">Nya i laget</div>
+                        @foreach (var (playerId, name, first) in sq.Newcomers)
+                        {
+                            <div class="d-flex justify-content-between small border-bottom py-1">
+                                <a asp-action="Player" asp-route-id="@playerId" asp-route-competitionId="@Model.CompetitionId" class="text-reset">@name</a>
+                                <span class="text-muted">första match @first.ToString("d MMM", sv)</span>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@functions {
+    private static string SeasonSimulatorText() =>
+        InnebandyStats.Services.SeasonSimulator.Simulations.ToString("N0", new System.Globalization.CultureInfo("sv-SE"));
+}

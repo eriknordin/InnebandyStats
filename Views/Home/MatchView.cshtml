@@ -262,8 +262,29 @@
         {
             var p = Model.Preview;
             <div class="card mb-4">
-                <div class="card-header fw-semibold">Inför matchen</div>
+                <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                    <span>Inför matchen</span>
+                    <a asp-action="CompareTeams" asp-route-competitionId="@Model.CompetitionId"
+                       asp-route-teamA="@Model.HomeTeam" asp-route-teamB="@Model.AwayTeam" class="small fw-normal">Full jämförelse →</a>
+                </div>
                 <div class="card-body py-2">
+                    @if (p.Odds != null)
+                    {
+                        var o = p.Odds;
+                        var inv = System.Globalization.CultureInfo.InvariantCulture;
+                        string Odds(double v) => (v * 100).ToString("0");
+                        <div class="my-2">
+                            <div class="small text-muted text-center mb-1">Vinstchans enligt säsongens målsnitt</div>
+                            <div class="odds-bar">
+                                <div class="home" style="width:@((o.HomeWin * 100).ToString("0.#", inv))%" title="@Model.HomeTeam vinner">@Odds(o.HomeWin) %</div>
+                                <div class="draw" style="width:@((o.Draw * 100).ToString("0.#", inv))%" title="Oavgjort">@Odds(o.Draw) %</div>
+                                <div class="away" style="width:@((o.AwayWin * 100).ToString("0.#", inv))%" title="@Model.AwayTeam vinner">@Odds(o.AwayWin) %</div>
+                            </div>
+                            <div class="d-flex justify-content-between small text-muted mt-1">
+                                <span>@Model.HomeTeam</span><span>Oavgjort</span><span>@Model.AwayTeam</span>
+                            </div>
+                        </div>
+                    }
                     <div class="compare-row">
                         <div class="home @Better(-p.HomeRank, -p.AwayRank)">@(p.HomeRank > 0 ? $"{p.HomeRank}:a" : "–")</div>
                         <div class="label">Tabellplacering</div>

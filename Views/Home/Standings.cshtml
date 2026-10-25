@@ -49,20 +49,7 @@
                 title="Favoritmarkera serien">☆</button>
     </h1>
 
-    <ul class="nav nav-tabs mb-4">
-        <li class="nav-item">
-            <a class="nav-link" asp-action="SeriesTable" asp-route-id="@Model.CompetitionId">Serietabell</a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link active" href="#">Spelarlista</a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" asp-action="Matches" asp-route-id="@Model.CompetitionId">Matcher</a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" asp-action="Leaders" asp-route-id="@Model.CompetitionId">Topplistor</a>
-        </li>
-    </ul>
+    <partial name="_SeriesTabs" model="Model.CompetitionId" view-data='new ViewDataDictionary(ViewData) { ["SeriesTab"] = "Standings" }' />
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {

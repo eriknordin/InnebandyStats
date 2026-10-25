@@ -37,4 +37,5 @@ public class MatchPreview
     public List<PlayerStanding> AwayTopPlayers { get; set; } = new();
     // Tidigare möten i serien, sett från hemmalaget
     public List<TeamMatchResult> PreviousMeetings { get; set; } = new();
+    public MatchOdds? Odds { get; set; }
 }
