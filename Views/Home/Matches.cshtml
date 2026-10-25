@@ -50,16 +50,16 @@
                 <div class="col-12 col-sm-6 col-md-4">
                     <label for="sortSelect" class="form-label small text-muted mb-1">Sortering</label>
                     <select id="sortSelect" name="sort" class="form-select form-select-sm" onchange="this.form.submit()">
-                        <option value="round" selected="@(Model.SortBy == "round")">Per omgång</option>
                         <option value="date" selected="@(Model.SortBy == "date")">Datum (äldst först)</option>
                         <option value="date_desc" selected="@(Model.SortBy == "date_desc")">Datum (senast först)</option>
+                        <option value="round" selected="@(Model.SortBy == "round")">Per omgång</option>
                     </select>
                 </div>
                 @if (!string.IsNullOrEmpty(Model.FilterTeam))
                 {
                     <div class="col-auto">
                         <a asp-action="Matches" asp-route-id="@Model.CompetitionId"
-                           asp-route-sort="@(Model.SortBy == "round" ? null : Model.SortBy)"
+                           asp-route-sort="@(Model.SortBy == "date" ? null : Model.SortBy)"
                            class="btn btn-sm btn-outline-secondary">Rensa filter</a>
                     </div>
                 }

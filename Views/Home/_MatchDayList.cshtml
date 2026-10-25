@@ -1,0 +1,32 @@
+@model IEnumerable<InnebandyStats.Models.Api.Match>
+@{
+    var sv = new System.Globalization.CultureInfo("sv-SE");
+    var competitionId = ViewData["CompetitionId"] as int? ?? 0;
+
+    string DayLabel(DateTime date)
+    {
+        var diff = (date.Date - DateTime.Today).Days;
+        return diff switch
+        {
+            0 => "Idag",
+            -1 => "Igår",
+            1 => "Imorgon",
+            _ => date.ToString("dddd d MMMM", sv)
+        };
+    }
+}
+
+@foreach (var day in Model.GroupBy(m => m.MatchDateTime.Date))
+{
+    <div class="match-day">@DayLabel(day.Key)</div>
+    @foreach (var match in day)
+    {
+        var played = match.MatchStatus == 4 && match.GoalsHomeTeam.HasValue && match.GoalsAwayTeam.HasValue;
+        <a class="match-row" asp-action="MatchView" asp-route-id="@match.MatchID" asp-route-competitionId="@competitionId">
+            <span class="mr-time">@match.MatchDateTime.ToString("HH:mm")</span>
+            <span class="mr-home">@match.HomeTeam.Trim()</span>
+            <span class="mr-score @(played ? "" : "upcoming")">@(played ? $"{match.GoalsHomeTeam}–{match.GoalsAwayTeam}" : "vs")</span>
+            <span class="mr-away">@match.AwayTeam.Trim()</span>
+        </a>
+    }
+}

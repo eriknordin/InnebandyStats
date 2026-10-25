@@ -32,6 +32,46 @@
         <div class="alert alert-danger">@Model.ErrorMessage</div>
     }
 
+    @if (Model.RecentMatches.Count > 0 || Model.UpcomingMatches.Count > 0)
+    {
+        var listData = new ViewDataDictionary(ViewData) { ["CompetitionId"] = Model.CompetitionId };
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header fw-semibold">Senaste resultat</div>
+                    <div class="card-body py-2">
+                        @if (Model.RecentMatches.Count > 0)
+                        {
+                            <partial name="_MatchDayList" model="Model.RecentMatches" view-data="listData" />
+                        }
+                        else
+                        {
+                            <div class="match-empty">Inga spelade matcher ännu.</div>
+                        }
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header fw-semibold d-flex justify-content-between">
+                        <span>Kommande matcher</span>
+                        <a asp-action="Matches" asp-route-id="@Model.CompetitionId" class="small fw-normal">Alla matcher →</a>
+                    </div>
+                    <div class="card-body py-2">
+                        @if (Model.UpcomingMatches.Count > 0)
+                        {
+                            <partial name="_MatchDayList" model="Model.UpcomingMatches" view-data="listData" />
+                        }
+                        else
+                        {
+                            <div class="match-empty">Inga kommande matcher.</div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
     <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Tabelltyp">
         @foreach (var (scope, label) in new[] { ("all", "Totalt"), ("home", "Hemma"), ("away", "Borta") })
         {

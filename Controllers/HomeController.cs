@@ -162,6 +162,7 @@ public class HomeController : Controller
             var table = await _apiService.GetSeriesTableAsync(id, scope);
             var competitionName = await _apiService.GetCompetitionNameAsync(id);
             var history = scope == "all" ? await _apiService.GetPositionHistoryAsync(id) : null;
+            var matches = await _apiService.GetMatchesAsync(id);
 
             return View(new SeriesTableViewModel
             {
@@ -169,7 +170,9 @@ public class HomeController : Controller
                 CompetitionName = competitionName,
                 Scope = scope,
                 Table = table,
-                History = history
+                History = history,
+                RecentMatches = matches.Where(IsPlayed).OrderByDescending(m => m.MatchDateTime).Take(5).ToList(),
+                UpcomingMatches = matches.Where(IsUpcoming).OrderBy(m => m.MatchDateTime).Take(5).ToList()
             });
         }
         catch (Exception ex)
@@ -238,13 +241,13 @@ public class HomeController : Controller
         }
     }
 
-    public async Task<IActionResult> Matches(int id, string? team, string sort = "round")
+    public async Task<IActionResult> Matches(int id, string? team, string sort = "date")
     {
         if (id <= 0)
             return RedirectToAction("Index");
 
-        if (sort is not ("date" or "date_desc"))
-            sort = "round";
+        if (sort is not ("round" or "date_desc"))
+            sort = "date";
 
         try
         {
@@ -464,6 +467,72 @@ public class HomeController : Controller
                 ErrorMessage = $"Ett fel uppstod: {ex.Message}"
             });
         }
+    }
+
+    private const int PlayedStatus = 4;
+
+    private static bool IsPlayed(Models.Api.Match m) =>
+        m.MatchStatus == PlayedStatus && m.GoalsHomeTeam.HasValue && m.GoalsAwayTeam.HasValue;
+
+    // Ej spelade matcher från och med idag (äldre ej rapporterade matcher räknas inte)
+    private static bool IsUpcoming(Models.Api.Match m) =>
+        !IsPlayed(m) && m.MatchDateTime >= DateTime.Today;
+
+    // Matcher och tabell för startsidans favoriter. Fönstret är generöst – exakta
+    // datumgränser räknas fram i webbläsaren som har användarens lokala tid.
+    [HttpGet]
+    public async Task<IActionResult> GetFixtures([FromQuery] int[] ids)
+    {
+        var competitionIds = ids.Where(i => i > 0).Distinct().Take(30).ToList();
+
+        var results = await Task.WhenAll(competitionIds.Select(async id =>
+        {
+            try
+            {
+                var matches = await _apiService.GetMatchesAsync(id);
+                var from = DateTime.Today.AddDays(-10);
+                var to = DateTime.Today.AddDays(11);
+
+                var recent = matches.Where(IsPlayed).OrderByDescending(m => m.MatchDateTime).Take(5);
+                var upcoming = matches.Where(IsUpcoming).OrderBy(m => m.MatchDateTime).Take(5);
+                var inWindow = matches.Where(m => m.MatchDateTime >= from && m.MatchDateTime < to
+                                                  && (IsPlayed(m) || IsUpcoming(m)));
+
+                var selected = recent.Concat(upcoming).Concat(inWindow)
+                    .DistinctBy(m => m.MatchID)
+                    .OrderBy(m => m.MatchDateTime);
+
+                return (object)new
+                {
+                    competitionId = id,
+                    competitionName = matches.FirstOrDefault()?.CompetitionName.Trim() ?? "",
+                    table = InnebandyApiService.BuildTable(matches).Select(t => new
+                    {
+                        teamName = t.TeamName,
+                        played = t.Played,
+                        goalDiff = t.GoalDiff,
+                        points = t.Points
+                    }),
+                    matches = selected.Select(m => new
+                    {
+                        matchId = m.MatchID,
+                        dateTime = m.MatchDateTime.ToString("yyyy-MM-ddTHH:mm:ss"),
+                        homeTeam = m.HomeTeam.Trim(),
+                        awayTeam = m.AwayTeam.Trim(),
+                        goalsHome = m.GoalsHomeTeam,
+                        goalsAway = m.GoalsAwayTeam,
+                        played = IsPlayed(m),
+                        venue = m.Venue
+                    })
+                };
+            }
+            catch (Exception ex)
+            {
+                return (object)new { competitionId = id, error = ex.Message };
+            }
+        }));
+
+        return Json(results);
     }
 
     public IActionResult TeamSearch()

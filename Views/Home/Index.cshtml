@@ -1,8 +1,256 @@
 @{
-    ViewData["Title"] = "Hem";
+    ViewData["Title"] = "Mina matcher";
 }
 
 <div class="container mt-4">
-    <h1 class="mb-3">Innebandy Poängliga</h1>
-    <p class="text-muted">Välj säsong, förbund och serie i menyn ovan och klicka <strong>Hämta</strong> för att visa poängligan.</p>
+    <h1 class="mb-3">Mina matcher</h1>
+
+    <div id="noFavs" class="card mb-4" style="display:none;">
+        <div class="card-body">
+            <h5 class="card-title">Välkommen!</h5>
+            <p class="mb-2">Här samlas senaste resultat och kommande matcher för dina favoriter.</p>
+            <ol class="mb-0">
+                <li>Välj säsong, förbund och serie i menyn ovan och klicka <strong>Hämta</strong>.</li>
+                <li>Klicka på stjärnan <span class="text-warning">☆</span> vid seriens namn eller vid ett lag i tabellen.</li>
+                <li>Kom tillbaka hit – dina matcher dyker upp automatiskt.</li>
+            </ol>
+        </div>
+    </div>
+
+    <div id="favContent" style="display:none;">
+        <div class="d-flex flex-wrap gap-2 mb-3" id="filterChips"></div>
+
+        <div id="loading" class="text-muted mb-3">
+            <span class="spinner-border spinner-border-sm me-2"></span>Hämtar matcher…
+        </div>
+        <div id="loadErrors"></div>
+
+        <div class="row g-3 mb-4" id="overview" style="display:none;">
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header fw-semibold">Senaste resultat <span class="text-muted fw-normal small">· senaste 7 dagarna</span></div>
+                    <div class="card-body py-2" id="recentList"></div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header fw-semibold">Kommande matcher <span class="text-muted fw-normal small">· kommande 7 dagarna</span></div>
+                    <div class="card-body py-2" id="upcomingList"></div>
+                </div>
+            </div>
+        </div>
+
+        <h4 class="mb-3" id="seriesHeading" style="display:none;">Mina serier</h4>
+        <div class="row g-3" id="seriesCards"></div>
+    </div>
 </div>
+
+@section Scripts {
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const favSeries = getFavs(FAV_SERIES_KEY);
+    const favTeams = getFavs(FAV_TEAMS_KEY);
+
+    const seriesIds = new Set(favSeries.map(s => String(s.id)));
+    const ids = [...new Set([...seriesIds, ...favTeams.map(t => String(t.competitionId)).filter(Boolean)])];
+
+    if (ids.length === 0) {
+        document.getElementById('noFavs').style.display = '';
+        return;
+    }
+    document.getElementById('favContent').style.display = '';
+
+    // Favoritlag per serie
+    const teamsByComp = {};
+    favTeams.forEach(t => {
+        const key = String(t.competitionId);
+        (teamsByComp[key] = teamsByComp[key] || new Set()).add(t.name.trim());
+    });
+    const isFavTeam = (compId, name) => !!teamsByComp[compId] && teamsByComp[compId].has(name);
+
+    let competitions = [];
+    let filter = 'all';
+
+    // ── Datum ──────────────────────────────────────────────────────────────
+    function startOfDay(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+    const today = startOfDay(new Date());
+
+    function dayLabel(date) {
+        const diff = Math.round((startOfDay(date) - today) / DAY_MS);
+        if (diff === 0) return 'Idag';
+        if (diff === -1) return 'Igår';
+        if (diff === 1) return 'Imorgon';
+        return date.toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long' });
+    }
+    function timeLabel(date) {
+        return date.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    // ── Rendering ──────────────────────────────────────────────────────────
+    function matchRow(m, showComp) {
+        const homeCls = isFavTeam(m.compId, m.homeTeam) ? 'mr-home fav-team' : 'mr-home';
+        const awayCls = isFavTeam(m.compId, m.awayTeam) ? 'mr-away fav-team' : 'mr-away';
+        const score = m.played
+            ? '<span class="mr-score">' + m.goalsHome + '–' + m.goalsAway + '</span>'
+            : '<span class="mr-score upcoming">vs</span>';
+        return '<a class="match-row" href="/Home/MatchView?id=' + m.matchId + '&competitionId=' + m.compId + '">'
+            + '<span class="mr-time">' + timeLabel(m.date) + '</span>'
+            + '<span class="' + homeCls + '">' + escHtml(m.homeTeam) + '</span>'
+            + score
+            + '<span class="' + awayCls + '">' + escHtml(m.awayTeam) + '</span>'
+            + (showComp ? '<span class="mr-comp">' + escHtml(m.compName) + '</span>' : '')
+            + '</a>';
+    }
+
+    function dayList(matches, showComp, emptyText) {
+        if (matches.length === 0)
+            return '<div class="match-empty">' + emptyText + '</div>';
+        let html = '', lastDay = null;
+        matches.forEach(m => {
+            const day = startOfDay(m.date).getTime();
+            if (day !== lastDay) {
+                html += '<div class="match-day">' + escHtml(dayLabel(m.date)) + '</div>';
+                lastDay = day;
+            }
+            html += matchRow(m, showComp);
+        });
+        return html;
+    }
+
+    // Vilka matcher hör till översikten med aktuellt filter
+    function inFilter(m) {
+        const favMatch = isFavTeam(m.compId, m.homeTeam) || isFavTeam(m.compId, m.awayTeam);
+        if (filter === 'teams') return favMatch;
+        if (filter !== 'all') return m.compId === filter;
+        return seriesIds.has(m.compId) || favMatch;
+    }
+
+    function renderOverview() {
+        const all = competitions.flatMap(c => c.matches).filter(inFilter);
+        const recentFrom = new Date(today.getTime() - 7 * DAY_MS);
+        const upcomingTo = new Date(today.getTime() + 8 * DAY_MS);
+
+        const recent = all.filter(m => m.played && m.date >= recentFrom)
+            .sort((a, b) => b.date - a.date);
+        const upcoming = all.filter(m => !m.played && m.date >= today && m.date < upcomingTo)
+            .sort((a, b) => a.date - b.date);
+
+        const showComp = filter === 'all' || filter === 'teams';
+        document.getElementById('recentList').innerHTML = dayList(recent, showComp, 'Inga spelade matcher de senaste 7 dagarna.');
+        document.getElementById('upcomingList').innerHTML = dayList(upcoming, showComp, 'Inga matcher de kommande 7 dagarna.');
+        document.getElementById('overview').style.display = '';
+    }
+
+    function miniTable(c) {
+        const favs = teamsByComp[c.compId] || new Set();
+        const rows = c.table.map((t, i) => ({ ...t, rank: i + 1 }));
+        // Topp 5 plus favoritlag längre ner
+        const shown = rows.filter(r => r.rank <= 5 || favs.has(r.teamName));
+        if (shown.length === 0) return '';
+        let html = '<table class="table table-sm mb-2"><thead><tr class="small text-muted">'
+            + '<th>#</th><th>Lag</th><th class="text-center">M</th><th class="text-center">+/-</th><th class="text-center">P</th></tr></thead><tbody>';
+        let prev = 0;
+        shown.forEach(r => {
+            if (r.rank > prev + 1)
+                html += '<tr><td colspan="5" class="text-center text-muted small py-0">⋯</td></tr>';
+            const cls = favs.has(r.teamName) ? ' class="fw-bold"' : '';
+            html += '<tr' + cls + '><td>' + r.rank + '</td>'
+                + '<td><a class="text-decoration-none text-reset" href="/Home/TeamAnalysis?competitionId=' + c.compId + '&teamName=' + encodeURIComponent(r.teamName) + '">' + escHtml(r.teamName) + '</a></td>'
+                + '<td class="text-center">' + r.played + '</td>'
+                + '<td class="text-center">' + (r.goalDiff > 0 ? '+' : '') + r.goalDiff + '</td>'
+                + '<td class="text-center fw-semibold">' + r.points + '</td></tr>';
+            prev = r.rank;
+        });
+        return html + '</tbody></table>';
+    }
+
+    function renderSeriesCards() {
+        const cards = document.getElementById('seriesCards');
+        const visible = competitions.filter(c =>
+            filter === 'all' ? true :
+            filter === 'teams' ? !!teamsByComp[c.compId] :
+            c.compId === filter);
+
+        document.getElementById('seriesHeading').style.display = visible.length ? '' : 'none';
+        cards.innerHTML = visible.map(c => {
+            const recent = c.matches.filter(m => m.played).sort((a, b) => b.date - a.date).slice(0, 5);
+            const upcoming = c.matches.filter(m => !m.played && m.date >= today).sort((a, b) => a.date - b.date).slice(0, 5);
+            return '<div class="col-lg-6"><div class="card h-100">'
+                + '<div class="card-header d-flex justify-content-between align-items-center">'
+                + '<a class="fw-semibold text-decoration-none" href="/Home/SeriesTable?id=' + c.compId + '">' + escHtml(c.compName) + '</a>'
+                + '<a class="small" href="/Home/Matches?id=' + c.compId + '">Alla matcher →</a></div>'
+                + '<div class="card-body">'
+                + miniTable(c)
+                + '<div class="row g-3"><div class="col-sm-6"><div class="fw-semibold small mb-1">Senaste</div>'
+                + dayList(recent, false, 'Inga spelade matcher ännu.')
+                + '</div><div class="col-sm-6"><div class="fw-semibold small mb-1">Kommande</div>'
+                + dayList(upcoming, false, 'Inga kommande matcher.')
+                + '</div></div></div></div></div>';
+        }).join('');
+    }
+
+    function renderChips() {
+        const chips = [{ key: 'all', label: 'Alla favoriter' }];
+        if (favTeams.length) chips.push({ key: 'teams', label: '★ Mina lag' });
+        competitions.forEach(c => chips.push({ key: c.compId, label: c.compName }));
+
+        const el = document.getElementById('filterChips');
+        el.innerHTML = chips.map(ch =>
+            '<button type="button" class="btn btn-sm ' + (ch.key === filter ? 'btn-dark' : 'btn-outline-dark') + '" data-key="' + escHtml(ch.key) + '">'
+            + escHtml(ch.label) + '</button>').join('');
+        el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+            filter = b.dataset.key;
+            render();
+        }));
+    }
+
+    function render() {
+        renderChips();
+        renderOverview();
+        renderSeriesCards();
+    }
+
+    // ── Hämtning ───────────────────────────────────────────────────────────
+    const query = ids.map(id => 'ids=' + encodeURIComponent(id)).join('&');
+    fetch('/Home/GetFixtures?' + query)
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(data => {
+            const errors = [];
+            const nameFromFavs = id =>
+                (favSeries.find(s => String(s.id) === id) || {}).name
+                || (favTeams.find(t => String(t.competitionId) === id) || {}).competitionName
+                || ('Serie ' + id);
+
+            data.forEach(c => {
+                const compId = String(c.competitionId);
+                if (c.error) { errors.push(nameFromFavs(compId)); return; }
+                const compName = c.competitionName || nameFromFavs(compId);
+                competitions.push({
+                    compId,
+                    compName,
+                    table: c.table,
+                    matches: c.matches.map(m => ({ ...m, compId, compName, date: new Date(m.dateTime) }))
+                });
+            });
+
+            // Favoritserier först, i den ordning de sparades
+            competitions.sort((a, b) => {
+                const ai = ids.indexOf(a.compId), bi = ids.indexOf(b.compId);
+                return ai - bi;
+            });
+
+            if (errors.length)
+                document.getElementById('loadErrors').innerHTML =
+                    '<div class="alert alert-warning py-2 small">Kunde inte hämta: ' + errors.map(escHtml).join(', ') + '</div>';
+
+            render();
+        })
+        .catch(err => {
+            document.getElementById('loadErrors').innerHTML =
+                '<div class="alert alert-danger">Kunde inte hämta matcher: ' + escHtml(err.message) + '</div>';
+        })
+        .finally(() => { document.getElementById('loading').style.display = 'none'; });
+});
+</script>
+}
