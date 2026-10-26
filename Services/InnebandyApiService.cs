@@ -18,6 +18,8 @@ public class InnebandyApiService
 
     // Minsta tid ett API-svar återanvänds innan samma endpoint anropas igen
     private static readonly TimeSpan ApiCacheDuration = TimeSpan.FromMinutes(10);
+    // Matchlistan bär ställningen i pågående matcher och hämtas därför oftare
+    private static readonly TimeSpan MatchListCacheDuration = TimeSpan.FromMinutes(2);
     // Token gäller 30 min hos innebandy.se
     private static readonly TimeSpan TokenCacheDuration = TimeSpan.FromMinutes(20);
     private static readonly object CacheLock = new();
@@ -116,7 +118,7 @@ public class InnebandyApiService
 
     public async Task<List<Match>> GetMatchesAsync(int competitionId)
     {
-        var json = await GetApiJsonAsync($"competitions/{competitionId}/matches");
+        var json = await GetApiJsonAsync($"competitions/{competitionId}/matches", MatchListCacheDuration);
         return JsonSerializer.Deserialize<List<Match>>(json, JsonOptions) ?? new List<Match>();
     }
 

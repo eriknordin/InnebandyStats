@@ -26,13 +26,23 @@
         <div id="loadErrors"></div>
 
         <div class="row g-3 mb-4" id="overview" style="display:none;">
-            <div class="col-md-6">
+            <div class="col-md-6 overview-col">
                 <div class="card h-100">
                     <div class="card-header fw-semibold">Senaste resultat <span class="text-muted fw-normal small">· senaste 7 dagarna</span></div>
                     <div class="card-body py-2" id="recentList"></div>
                 </div>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-6 overview-col" id="liveCol" style="display:none;">
+                <div class="card h-100 live-card">
+                    <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                        <span>Pågår nu</span>
+                        <span class="live-badge">Live</span>
+                    </div>
+                    <div class="card-body py-2" id="liveList"></div>
+                    <div class="card-footer small text-muted py-1">Uppdateras automatiskt var 2:a minut.</div>
+                </div>
+            </div>
+            <div class="col-md-6 overview-col">
                 <div class="card h-100">
                     <div class="card-header fw-semibold">Kommande matcher <span class="text-muted fw-normal small">· kommande 7 dagarna</span></div>
                     <div class="card-body py-2" id="upcomingList"></div>
@@ -91,11 +101,15 @@ document.addEventListener('DOMContentLoaded', function () {
     function matchRow(m, showComp) {
         const homeCls = isFavTeam(m.compId, m.homeTeam) ? 'mr-home fav-team' : 'mr-home';
         const awayCls = isFavTeam(m.compId, m.awayTeam) ? 'mr-away fav-team' : 'mr-away';
+        const hasScore = m.goalsHome !== null && m.goalsAway !== null;
         const score = m.played
             ? '<span class="mr-score">' + m.goalsHome + '–' + m.goalsAway + '</span>'
-            : '<span class="mr-score upcoming">vs</span>';
+            : m.live
+                ? '<span class="mr-score live">' + (hasScore ? m.goalsHome + '–' + m.goalsAway : 'pågår') + '</span>'
+                : '<span class="mr-score upcoming">vs</span>';
+        const time = m.live ? '<span class="live-badge">Live</span>' : timeLabel(m.date);
         return '<a class="match-row" href="/Home/MatchView?id=' + m.matchId + '&competitionId=' + m.compId + '">'
-            + '<span class="mr-time">' + timeLabel(m.date) + '</span>'
+            + '<span class="mr-time">' + time + '</span>'
             + '<span class="' + homeCls + '">' + escHtml(m.homeTeam) + '</span>'
             + score
             + '<span class="' + awayCls + '">' + escHtml(m.awayTeam) + '</span>'
@@ -133,11 +147,20 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const recent = all.filter(m => m.played && m.date >= recentFrom)
             .sort((a, b) => b.date - a.date);
-        const upcoming = all.filter(m => !m.played && m.date >= today && m.date < upcomingTo)
+        const live = all.filter(m => m.live).sort((a, b) => a.date - b.date);
+        const upcoming = all.filter(m => !m.played && !m.live && m.date >= today && m.date < upcomingTo)
             .sort((a, b) => a.date - b.date);
+
+        // Pågående matcher får en egen kolumn mellan senaste och kommande
+        document.getElementById('liveCol').style.display = live.length ? '' : 'none';
+        document.querySelectorAll('#overview .overview-col').forEach(col => {
+            col.classList.toggle('col-md-6', !live.length);
+            col.classList.toggle('col-lg-4', !!live.length);
+        });
 
         const showComp = filter === 'all' || filter === 'teams';
         document.getElementById('recentList').innerHTML = dayList(recent, showComp, 'Inga spelade matcher de senaste 7 dagarna.');
+        document.getElementById('liveList').innerHTML = dayList(live, showComp, '');
         document.getElementById('upcomingList').innerHTML = dayList(upcoming, showComp, 'Inga matcher de kommande 7 dagarna.');
         document.getElementById('overview').style.display = '';
     }
@@ -175,13 +198,18 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('seriesHeading').style.display = visible.length ? '' : 'none';
         cards.innerHTML = visible.map(c => {
             const recent = c.matches.filter(m => m.played).sort((a, b) => b.date - a.date).slice(0, 5);
-            const upcoming = c.matches.filter(m => !m.played && m.date >= today).sort((a, b) => a.date - b.date).slice(0, 5);
+            const live = c.matches.filter(m => m.live).sort((a, b) => a.date - b.date);
+            const upcoming = c.matches.filter(m => !m.played && !m.live && m.date >= today).sort((a, b) => a.date - b.date).slice(0, 5);
             return '<div class="col-lg-6"><div class="card h-100">'
                 + '<div class="card-header d-flex justify-content-between align-items-center">'
                 + '<a class="fw-semibold text-decoration-none" href="/Home/SeriesTable?id=' + c.compId + '">' + escHtml(c.compName) + '</a>'
                 + '<a class="small" href="/Home/Matches?id=' + c.compId + '">Alla matcher →</a></div>'
                 + '<div class="card-body">'
                 + miniTable(c)
+                // Kortet är smalt, så pågående matcher får full bredd före senaste/kommande
+                + (live.length
+                    ? '<div class="mb-3"><div class="fw-semibold small mb-1 text-danger">Pågår nu</div>' + dayList(live, false, '') + '</div>'
+                    : '')
                 + '<div class="row g-3"><div class="col-sm-6"><div class="fw-semibold small mb-1">Senaste</div>'
                 + dayList(recent, false, 'Inga spelade matcher ännu.')
                 + '</div><div class="col-sm-6"><div class="fw-semibold small mb-1">Kommande</div>'
@@ -213,44 +241,58 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // ── Hämtning ───────────────────────────────────────────────────────────
     const query = ids.map(id => 'ids=' + encodeURIComponent(id)).join('&');
-    fetch('/Home/GetFixtures?' + query)
-        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-        .then(data => {
-            const errors = [];
-            const nameFromFavs = id =>
-                (favSeries.find(s => String(s.id) === id) || {}).name
-                || (favTeams.find(t => String(t.competitionId) === id) || {}).competitionName
-                || ('Serie ' + id);
+    const REFRESH_MS = 2 * 60 * 1000;
+    let refreshTimer = null;
 
-            data.forEach(c => {
-                const compId = String(c.competitionId);
-                if (c.error) { errors.push(nameFromFavs(compId)); return; }
-                const compName = c.competitionName || nameFromFavs(compId);
-                competitions.push({
-                    compId,
-                    compName,
-                    table: c.table,
-                    matches: c.matches.map(m => ({ ...m, compId, compName, date: new Date(m.dateTime) }))
+    function load() {
+        return fetch('/Home/GetFixtures?' + query)
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(data => {
+                const errors = [];
+                competitions = [];
+                document.getElementById('loadErrors').innerHTML = '';
+                const nameFromFavs = id =>
+                    (favSeries.find(s => String(s.id) === id) || {}).name
+                    || (favTeams.find(t => String(t.competitionId) === id) || {}).competitionName
+                    || ('Serie ' + id);
+
+                data.forEach(c => {
+                    const compId = String(c.competitionId);
+                    if (c.error) { errors.push(nameFromFavs(compId)); return; }
+                    const compName = c.competitionName || nameFromFavs(compId);
+                    competitions.push({
+                        compId,
+                        compName,
+                        table: c.table,
+                        matches: c.matches.map(m => ({ ...m, compId, compName, date: new Date(m.dateTime) }))
+                    });
                 });
-            });
 
-            // Favoritserier först, i den ordning de sparades
-            competitions.sort((a, b) => {
-                const ai = ids.indexOf(a.compId), bi = ids.indexOf(b.compId);
-                return ai - bi;
-            });
+                // Favoritserier först, i den ordning de sparades
+                competitions.sort((a, b) => {
+                    const ai = ids.indexOf(a.compId), bi = ids.indexOf(b.compId);
+                    return ai - bi;
+                });
 
-            if (errors.length)
+                if (errors.length)
+                    document.getElementById('loadErrors').innerHTML =
+                        '<div class="alert alert-warning py-2 small">Kunde inte hämta: ' + errors.map(escHtml).join(', ') + '</div>';
+
+                render();
+
+                // Uppdatera så länge någon match pågår
+                clearTimeout(refreshTimer);
+                if (competitions.some(c => c.matches.some(m => m.live)))
+                    refreshTimer = setTimeout(load, REFRESH_MS);
+            })
+            .catch(err => {
                 document.getElementById('loadErrors').innerHTML =
-                    '<div class="alert alert-warning py-2 small">Kunde inte hämta: ' + errors.map(escHtml).join(', ') + '</div>';
+                    '<div class="alert alert-danger">Kunde inte hämta matcher: ' + escHtml(err.message) + '</div>';
+            })
+            .finally(() => { document.getElementById('loading').style.display = 'none'; });
+    }
 
-            render();
-        })
-        .catch(err => {
-            document.getElementById('loadErrors').innerHTML =
-                '<div class="alert alert-danger">Kunde inte hämta matcher: ' + escHtml(err.message) + '</div>';
-        })
-        .finally(() => { document.getElementById('loading').style.display = 'none'; });
+    load();
 });
 </script>
 }

@@ -124,3 +124,12 @@ table.sortable th.sorted-desc::after { content: " ▼"; opacity: .8; }
 .chart-svg .bar-odds { fill: var(--bs-primary); }
 .chart-svg .bar-odds.current { fill: #fd7e14; }
 .chart-svg a, .chart-svg a text { text-decoration: none; }
+
+/* Pågående matcher */
+.live-badge { display: inline-flex; align-items: center; gap: .25rem; font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #dc3545; }
+.live-badge::before { content: ""; width: .45rem; height: .45rem; border-radius: 50%; background: #dc3545; animation: live-pulse 1.4s ease-in-out infinite; }
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .live-badge::before { animation: none; } }
+.match-row .mr-score.live { background: #dc3545; color: #fff; }
+.card.live-card { border-color: rgba(220, 53, 69, .45); }
+.card.live-card > .card-header { background: rgba(220, 53, 69, .08); }

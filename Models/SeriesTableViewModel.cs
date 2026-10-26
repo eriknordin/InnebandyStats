@@ -11,6 +11,7 @@ public class SeriesTableViewModel
     public List<TeamTableEntry> Table { get; set; } = new();
     public PositionHistory? History { get; set; }
     public List<Match> RecentMatches { get; set; } = new();
+    public List<Match> LiveMatches { get; set; } = new();
     public List<Match> UpcomingMatches { get; set; } = new();
     public SeasonProjection? Projection { get; set; }
     public string? ErrorMessage { get; set; }

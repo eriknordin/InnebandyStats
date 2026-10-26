@@ -164,6 +164,7 @@ public class HomeController : Controller
             var history = scope == "all" ? await _apiService.GetPositionHistoryAsync(id) : null;
             var matches = await _apiService.GetMatchesAsync(id);
             var projection = scope == "all" ? await _apiService.GetSeasonProjectionAsync(id) : null;
+            var now = MatchState.SwedishNow;
 
             return View(new SeriesTableViewModel
             {
@@ -172,8 +173,9 @@ public class HomeController : Controller
                 Scope = scope,
                 Table = table,
                 History = history,
-                RecentMatches = matches.Where(IsPlayed).OrderByDescending(m => m.MatchDateTime).Take(5).ToList(),
-                UpcomingMatches = matches.Where(IsUpcoming).OrderBy(m => m.MatchDateTime).Take(5).ToList(),
+                RecentMatches = matches.Where(MatchState.IsPlayed).OrderByDescending(m => m.MatchDateTime).Take(5).ToList(),
+                LiveMatches = matches.Where(m => MatchState.IsLive(m, now)).OrderBy(m => m.MatchDateTime).ToList(),
+                UpcomingMatches = matches.Where(m => MatchState.IsUpcoming(m, now)).OrderBy(m => m.MatchDateTime).Take(5).ToList(),
                 Projection = projection
             });
         }
@@ -520,15 +522,6 @@ public class HomeController : Controller
         }
     }
 
-    private const int PlayedStatus = 4;
-
-    private static bool IsPlayed(Models.Api.Match m) =>
-        m.MatchStatus == PlayedStatus && m.GoalsHomeTeam.HasValue && m.GoalsAwayTeam.HasValue;
-
-    // Ej spelade matcher från och med idag (äldre ej rapporterade matcher räknas inte)
-    private static bool IsUpcoming(Models.Api.Match m) =>
-        !IsPlayed(m) && m.MatchDateTime >= DateTime.Today;
-
     // Matcher och tabell för startsidans favoriter. Fönstret är generöst – exakta
     // datumgränser räknas fram i webbläsaren som har användarens lokala tid.
     [HttpGet]
@@ -541,15 +534,17 @@ public class HomeController : Controller
             try
             {
                 var matches = await _apiService.GetMatchesAsync(id);
-                var from = DateTime.Today.AddDays(-10);
-                var to = DateTime.Today.AddDays(11);
+                var now = MatchState.SwedishNow;
+                var from = now.Date.AddDays(-10);
+                var to = now.Date.AddDays(11);
 
-                var recent = matches.Where(IsPlayed).OrderByDescending(m => m.MatchDateTime).Take(5);
-                var upcoming = matches.Where(IsUpcoming).OrderBy(m => m.MatchDateTime).Take(5);
+                var recent = matches.Where(MatchState.IsPlayed).OrderByDescending(m => m.MatchDateTime).Take(5);
+                var live = matches.Where(m => MatchState.IsLive(m, now));
+                var upcoming = matches.Where(m => MatchState.IsUpcoming(m, now)).OrderBy(m => m.MatchDateTime).Take(5);
                 var inWindow = matches.Where(m => m.MatchDateTime >= from && m.MatchDateTime < to
-                                                  && (IsPlayed(m) || IsUpcoming(m)));
+                                                  && (MatchState.IsPlayed(m) || MatchState.IsUpcoming(m, now)));
 
-                var selected = recent.Concat(upcoming).Concat(inWindow)
+                var selected = recent.Concat(live).Concat(upcoming).Concat(inWindow)
                     .DistinctBy(m => m.MatchID)
                     .OrderBy(m => m.MatchDateTime);
 
@@ -572,7 +567,8 @@ public class HomeController : Controller
                         awayTeam = m.AwayTeam.Trim(),
                         goalsHome = m.GoalsHomeTeam,
                         goalsAway = m.GoalsAwayTeam,
-                        played = IsPlayed(m),
+                        played = MatchState.IsPlayed(m),
+                        live = MatchState.IsLive(m, now),
                         venue = m.Venue
                     })
                 };

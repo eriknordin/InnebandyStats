@@ -179,7 +179,15 @@
                                     {
                                         <tr>
                                             <td class="ps-3 text-muted small" style="width:110px; white-space:nowrap;">
-                                                @m.MatchDateTime.ToString("yyyy-MM-dd HH:mm")
+                                                @if (InnebandyStats.Services.MatchState.IsLive(m.MatchStatus, m.GoalsFor, m.GoalsAgainst, m.MatchDateTime, InnebandyStats.Services.MatchState.SwedishNow))
+                                                {
+                                                    <span class="live-badge">Live</span>
+                                                    @(m.GoalsFor.HasValue && m.GoalsAgainst.HasValue ? $" {m.GoalsFor}–{m.GoalsAgainst}" : "")
+                                                }
+                                                else
+                                                {
+                                                    @m.MatchDateTime.ToString("yyyy-MM-dd HH:mm")
+                                                }
                                             </td>
                                             <td class="small text-muted" style="width:32px;">
                                                 @(m.IsHome ? "H" : "B")

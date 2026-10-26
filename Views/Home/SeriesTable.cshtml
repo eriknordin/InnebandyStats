@@ -19,11 +19,12 @@
         <div class="alert alert-danger">@Model.ErrorMessage</div>
     }
 
-    @if (Model.RecentMatches.Count > 0 || Model.UpcomingMatches.Count > 0)
+    @if (Model.RecentMatches.Count > 0 || Model.LiveMatches.Count > 0 || Model.UpcomingMatches.Count > 0)
     {
         var listData = new ViewDataDictionary(ViewData) { ["CompetitionId"] = Model.CompetitionId };
+        var colClass = Model.LiveMatches.Count > 0 ? "col-lg-4" : "col-md-6";
         <div class="row g-3 mb-4">
-            <div class="col-md-6">
+            <div class="@colClass">
                 <div class="card h-100">
                     <div class="card-header fw-semibold">Senaste resultat</div>
                     <div class="card-body py-2">
@@ -38,7 +39,21 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-6">
+            @if (Model.LiveMatches.Count > 0)
+            {
+                <div class="@colClass">
+                    <div class="card h-100 live-card">
+                        <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                            <span>Pågår nu</span>
+                            <span class="live-badge">Live</span>
+                        </div>
+                        <div class="card-body py-2">
+                            <partial name="_MatchDayList" model="Model.LiveMatches" view-data="listData" />
+                        </div>
+                    </div>
+                </div>
+            }
+            <div class="@colClass">
                 <div class="card h-100">
                     <div class="card-header fw-semibold d-flex justify-content-between">
                         <span>Kommande matcher</span>
