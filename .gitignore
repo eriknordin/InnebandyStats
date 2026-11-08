@@ -19,3 +19,6 @@ Thumbs.db
 
 ## Secrets
 appsettings.Development.json
+
+# Lokalt datalager (SQLite)
+data/

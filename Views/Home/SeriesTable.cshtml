@@ -16,7 +16,7 @@
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
-        <div class="alert alert-danger">@Model.ErrorMessage</div>
+        <partial name="_ErrorAlert" model="Model.ErrorMessage" />
     }
 
     @if (Model.RecentMatches.Count > 0 || Model.LiveMatches.Count > 0 || Model.UpcomingMatches.Count > 0)

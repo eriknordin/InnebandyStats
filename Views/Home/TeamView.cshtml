@@ -48,7 +48,7 @@
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
-        <div class="alert alert-danger">@Model.ErrorMessage</div>
+        <partial name="_ErrorAlert" model="Model.ErrorMessage" />
     }
 
     @if (Model.Players.Count == 0 && string.IsNullOrEmpty(Model.ErrorMessage))
@@ -89,8 +89,8 @@
                                         data-name="@player.Name"
                                         title="Favoritmarkera spelare">☆</button>
                             </td>
-                            <td>@player.Age</td>
-                            <td>@player.BirthYear</td>
+                            <td>@(player.Age > 0 ? player.Age.ToString() : "")</td>
+                            <td>@(player.BirthYear > 0 ? player.BirthYear.ToString() : "")</td>
                             <td class="text-center">@player.Matches</td>
                             <td class="text-center">@player.Goals</td>
                             <td class="text-center">@player.Assists</td>

@@ -1,4 +1,5 @@
 @model int
+@inject InnebandyStats.Services.InnebandyApiService Api
 @{
     var active = ViewData["SeriesTab"] as string;
     var tabs = new[]
@@ -9,6 +10,11 @@
         ("Leaders", "Topplistor"),
         ("TeamStats", "Lagstatistik")
     };
+    var (syncUrl, syncedAt) = await Api.GetSeriesSyncInfoAsync(Model);
+    var sv = new System.Globalization.CultureInfo("sv-SE");
+    string? syncedText = syncedAt is { } t
+        ? (t.Date == InnebandyStats.Services.MatchState.SwedishToday ? "idag " + t.ToString("HH:mm", sv) : t.ToString("d MMM HH:mm", sv))
+        : null;
 }
 <ul class="nav nav-tabs mb-4 series-tabs">
     @foreach (var (action, label) in tabs)
@@ -21,6 +27,27 @@
             else
             {
                 <a class="nav-link" asp-action="@action" asp-route-id="@Model">@label</a>
+            }
+        </li>
+    }
+    @if (syncUrl != null || syncedAt != null)
+    {
+        <li class="nav-item ms-auto d-flex flex-wrap align-items-center justify-content-end gap-2 small py-1" data-ibs-container>
+            <span class="text-muted" data-ibs-progress>@(syncedText != null ? $"Synkad {syncedText}" : "Inte synkad")</span>
+            @if (syncUrl != null)
+            {
+                @* Synka visas bara när Chrome-pluginet är installerat (site.js) *@
+                <button type="button" class="btn btn-sm btn-outline-primary" data-ibs-fetch="@syncUrl" data-ibs-plugin-only hidden
+                        title="Hämtar seriens senaste matcher från stats.innebandy.se via Chrome-pluginet">
+                    ⟳ Synka senaste
+                </button>
+            }
+            @if (syncedAt != null)
+            {
+                <button type="button" class="btn btn-sm btn-outline-danger" data-ibs-clear="@Model"
+                        title="Tar bort seriens matchlista, matcher och laguppställningar från servern (och pluginet)">
+                    Rensa data
+                </button>
             }
         </li>
     }

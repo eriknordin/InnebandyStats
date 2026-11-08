@@ -14,4 +14,8 @@ COPY --from=build /app/publish .
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
 
+# Datalagret (SQLite) – montera en volym här så att datan överlever nya versioner
+ENV Storage__Path=/data/innebandystats.db
+VOLUME /data
+
 ENTRYPOINT ["dotnet", "InnebandyStats.dll"]

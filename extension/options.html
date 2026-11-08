@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Innebandystats – inställningar</title>
+  <link rel="stylesheet" href="sidepanel.css">
+  <style>
+    main { max-width: 520px; }
+    label { display: block; margin: 12px 0 4px; font-weight: 600; }
+    input[type=url], input[type=password] {
+      width: 100%; padding: 6px 8px; font: inherit; color: var(--text);
+      background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    }
+    .row { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+    button {
+      padding: 6px 12px; font: inherit; cursor: pointer; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    #message { margin-top: 12px; min-height: 1.4em; }
+    #message.error { color: var(--loss); }
+    #message.ok { color: var(--win); }
+  </style>
+</head>
+<body>
+  <header id="top"><div id="title">Innebandystats – synk till server</div></header>
+  <main>
+    <p class="muted">Allt pluginet fångar på stats.innebandy.se kan skickas till din egen Innebandystats-server, så att du kan se statistiken från mobilen.</p>
+
+    <label><input type="checkbox" id="enabled"> Skicka data till servern</label>
+
+    <label for="url">Serverns adress</label>
+    <input type="url" id="url" placeholder="https://innebandy.azurewebsites.net/" autocomplete="off">
+
+    <label for="apiKey">API-nyckel (valfri)</label>
+    <input type="password" id="apiKey" autocomplete="off" placeholder="Standardnyckeln används">
+    <div class="muted small">Lämna tomt för standardnyckeln som följer med appen. Fyll bara i om du satt en egen <code>Ingest__ApiKey</code> på servern.</div>
+
+    <div class="row">
+      <button class="primary" id="save" type="button">Spara</button>
+      <button id="test" type="button">Testa anslutningen</button>
+      <button id="sendAll" type="button">Skicka all insamlad data</button>
+    </div>
+    <div id="message"></div>
+
+    <h2>Status</h2>
+    <div id="status" class="muted small">–</div>
+    <div class="row"><button id="resetCounters" type="button">Nollställ räknarna</button></div>
+  </main>
+  <script type="module" src="src/options.js"></script>
+</body>
+</html>

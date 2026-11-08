@@ -1,0 +1,26 @@
+@model string?
+@using System.Text.RegularExpressions
+@{
+    // Saknad data: meddelandet innehåller adressen till sidan på stats.innebandy.se som hämtar den
+    var match = Regex.Match(Model ?? "", @"(?<text>.*?)\s*(?:Öppna sidan med pluginet aktivt:\s*)?(?<url>https://stats\.innebandy\.se/\S*)\s*$");
+}
+@if (string.IsNullOrEmpty(Model))
+{
+    return;
+}
+@if (match.Success)
+{
+    <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2" data-ibs-container>
+        <div class="flex-grow-1">
+            @match.Groups["text"].Value.Replace("Ett fel uppstod: ", "")
+            <div class="small text-muted" data-ibs-hint>Öppna sidan i Chrome med pluginet installerat – på en series spelprogram hämtas alla spelade matcher automatiskt. Ladda sedan om den här sidan.</div>
+            <div class="small mt-1" data-ibs-progress hidden></div>
+        </div>
+        <a class="btn btn-sm btn-primary" href="@match.Groups["url"].Value" target="_blank" rel="noopener"
+           data-ibs-fetch="@match.Groups["url"].Value">Öppna på stats.innebandy.se ↗</a>
+    </div>
+}
+else
+{
+    <div class="alert alert-danger">@Model</div>
+}

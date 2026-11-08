@@ -8,15 +8,17 @@ namespace InnebandyStats.Controllers;
 public class HomeController : Controller
 {
     private readonly InnebandyApiService _apiService;
+    private readonly ApiDocumentStore _store;
 
-    public HomeController(InnebandyApiService apiService)
+    public HomeController(InnebandyApiService apiService, ApiDocumentStore store)
     {
         _apiService = apiService;
+        _store = store;
     }
 
-    public IActionResult Index()
+    public async Task<IActionResult> Index()
     {
-        return View();
+        return View(await _store.GetOverviewAsync());
     }
 
     [HttpGet]
@@ -315,7 +317,7 @@ public class HomeController : Controller
                     MatchID = id,
                     CompetitionId = competitionId,
                     CompetitionName = competitionName,
-                    ErrorMessage = "Matchen kunde inte hittas."
+                    ErrorMessage = (await _apiService.MissingDataAsync($"matches/{id}")).Message
                 });
             }
 

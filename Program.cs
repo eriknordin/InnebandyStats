@@ -4,7 +4,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllersWithViews();
 builder.Services.AddMemoryCache();
-builder.Services.AddHttpClient<InnebandyApiService>();
+builder.Services.AddSingleton<ApiDocumentStore>();
+builder.Services.AddTransient<InnebandyApiService>();
 
 var app = builder.Build();
 
@@ -20,6 +21,7 @@ app.UseRouting();
 app.UseAuthorization();
 
 app.MapStaticAssets();
+app.MapIngest();
 
 app.MapControllerRoute(
     name: "default",
