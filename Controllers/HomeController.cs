@@ -21,6 +21,21 @@ public class HomeController : Controller
         return View(await _store.GetOverviewAsync());
     }
 
+    // Vilka serier som är synkade, sökbart
+    [HttpGet("/synkat")]
+    public async Task<IActionResult> Synced()
+    {
+        return View(await _store.GetOverviewAsync());
+    }
+
+    // Nedladdning av Chrome-pluginet och installationsguide
+    [HttpGet("/plugin")]
+    public IActionResult Plugin([FromServices] IWebHostEnvironment env)
+    {
+        ViewData["PluginVersion"] = PluginDownload.Version(env);
+        return View();
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetSeasons()
     {

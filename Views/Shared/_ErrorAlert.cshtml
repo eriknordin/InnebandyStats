@@ -13,7 +13,7 @@
     <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2" data-ibs-container>
         <div class="flex-grow-1">
             @match.Groups["text"].Value.Replace("Ett fel uppstod: ", "")
-            <div class="small text-muted" data-ibs-hint>Öppna sidan i Chrome med pluginet installerat – på en series spelprogram hämtas alla spelade matcher automatiskt. Ladda sedan om den här sidan.</div>
+            <div class="small text-muted" data-ibs-hint>Öppna sidan i Chrome med pluginet installerat – på en series spelprogram hämtas alla spelade matcher automatiskt. Ladda sedan om den här sidan. Saknar du pluginet? <a href="/plugin">Ladda ner det här</a>.</div>
             <div class="small mt-1" data-ibs-progress hidden></div>
         </div>
         <a class="btn btn-sm btn-primary" href="@match.Groups["url"].Value" target="_blank" rel="noopener"

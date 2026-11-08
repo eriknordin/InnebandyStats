@@ -10,4 +10,11 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
   </ItemGroup>
 
+  <!-- Chrome-pluginet följer med i publiceringen och packas till zip vid nedladdning (/plugin) -->
+  <ItemGroup>
+    <Content Remove="extension\**" />
+    <None Remove="extension\**" />
+    <Content Include="extension\**" Exclude="extension\README.md" CopyToPublishDirectory="PreserveNewest" CopyToOutputDirectory="Never" />
+  </ItemGroup>
+
 </Project>

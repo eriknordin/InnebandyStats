@@ -1,0 +1,204 @@
+@{
+    ViewData["Title"] = "Chrome-plugin";
+    var version = ViewData["PluginVersion"] as string;
+}
+
+<style>
+    .guide { max-width: 760px; }
+    .guide .step { display: flex; gap: 14px; margin-bottom: 2rem; }
+    .guide .step-no {
+        flex: 0 0 34px; height: 34px; border-radius: 50%; background: #0b5cad; color: #fff;
+        font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 1.05rem;
+    }
+    .guide .step-body { flex: 1; min-width: 0; }
+    .guide .step-body h2 { font-size: 1.25rem; margin: 4px 0 .5rem; }
+    .guide .mock {
+        border: 1px solid #dadce0; border-radius: 10px; background: #fff; padding: 14px 16px; margin: .75rem 0;
+        font-family: system-ui, "Segoe UI", sans-serif; font-size: .92rem; color: #202124; overflow-x: auto;
+    }
+    .guide .mock-label { font-size: .75rem; color: #5f6368; margin-bottom: 8px; }
+    .guide .hl { outline: 2.5px solid #e8710a; outline-offset: 3px; border-radius: 6px; }
+    .guide .chrome-btn {
+        display: inline-block; border: 1px solid #dadce0; border-radius: 4px; padding: 3px 10px;
+        color: #0b5cad; background: #fff; margin-right: 8px; white-space: nowrap;
+    }
+    .guide .chrome-btn.primary { border-color: #0b5cad; }
+    .guide .toggle {
+        display: inline-block; width: 34px; height: 16px; border-radius: 8px; background: #0b5cad;
+        position: relative; vertical-align: middle; margin-left: 6px;
+    }
+    .guide .toggle::after {
+        content: ""; position: absolute; right: 3px; top: 3px; width: 10px; height: 10px; border-radius: 50%; background: #fff;
+    }
+    .guide .addressbar { background: #f1f3f4; border-radius: 14px; padding: 5px 14px; font-size: 1rem; }
+    .guide .menu { display: inline-block; border: 1px solid #dadce0; border-radius: 4px; min-width: 170px; }
+    .guide .menu div { padding: 3px 12px; }
+    .guide .menu div.sel { background: #eef4fb; font-weight: 600; }
+    .guide .note { border-left: 4px solid #0b5cad; background: #eef4fb; padding: 8px 12px; border-radius: 4px; margin: .75rem 0; }
+    .guide .note.warn { border-left-color: #f0a030; background: #fff4e5; }
+    .guide .plugin-icon { width: 36px; height: 36px; vertical-align: middle; }
+    .guide .download {
+        border: 1px solid #dadce0; border-radius: 12px; padding: 18px; display: flex; flex-wrap: wrap;
+        align-items: center; gap: 16px; background: #f8fafd;
+    }
+    .guide table td { vertical-align: top; }
+</style>
+
+<div class="container mt-4 mb-5 guide">
+    <h1 class="mb-1">Innebandystats för Chrome</h1>
+    <p class="text-muted mb-4">
+        Ett tillägg till webbläsaren Google Chrome. När du tittar på en serie på <strong>stats.innebandy.se</strong>
+        samlar tillägget in resultat och matcher och skickar dem hit, så att tabeller och spelarstatistik finns här – även i mobilen.
+    </p>
+
+    @if (version != null)
+    {
+        <div class="download mb-5">
+            <img src="/plugin-icon.png" alt="" class="plugin-icon" style="width:48px;height:48px">
+            <div class="flex-grow-1">
+                <div class="fw-semibold">Innebandystats-plugin</div>
+                <div class="text-muted small">Version @version · för Google Chrome på Windows och Mac · installationen tar ungefär 5 minuter</div>
+            </div>
+            <a class="btn btn-primary btn-lg" href="/plugin/Innebandystats-plugin.zip" download>Ladda ner pluginet</a>
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-warning">Pluginet finns inte med i den här installationen av appen.</div>
+    }
+
+    <h2 class="h4 mb-3">Så installerar du</h2>
+    <p class="text-muted small">Du behöver en dator med <strong>Google Chrome</strong>. Pluginet fungerar inte i mobilen – men statistiken som samlas in kan du se här i mobilen.</p>
+
+    <div class="step">
+        <div class="step-no">1</div>
+        <div class="step-body">
+            <h2>Packa upp filen</h2>
+            <p>Klicka på <strong>Ladda ner pluginet</strong> ovan. Filen <strong>Innebandystats-plugin.zip</strong> hamnar i mappen <strong>Hämtade filer</strong>. Flytta den gärna till <strong>Dokument</strong> och packa sedan upp den:</p>
+            <ul>
+                <li><strong>Windows:</strong> högerklicka på filen och välj <strong>Extrahera alla...</strong> och sedan <strong>Extrahera</strong>.</li>
+                <li><strong>Mac:</strong> dubbelklicka på filen.</li>
+            </ul>
+            <div class="mock">
+                <div class="mock-label">Högerklicka på zip-filen</div>
+                <div class="menu">
+                    <div>Öppna</div>
+                    <div class="sel hl">Extrahera alla...</div>
+                    <div>Kopiera</div>
+                </div>
+            </div>
+            <p>Nu finns en vanlig mapp som heter <strong>Innebandystats-plugin</strong>.</p>
+            <div class="note warn"><strong>Viktigt:</strong> Låt mappen ligga kvar och ta inte bort den. Chrome läser tillägget direkt från mappen – raderas eller flyttas den slutar tillägget fungera.</div>
+        </div>
+    </div>
+
+    <div class="step">
+        <div class="step-no">2</div>
+        <div class="step-body">
+            <h2>Öppna tilläggssidan i Chrome</h2>
+            <p>Klicka i adressfältet högst upp i Chrome, skriv exakt texten nedan och tryck <strong>Enter</strong>:</p>
+            <div class="mock">
+                <div class="addressbar hl"><span class="user-select-all">chrome://extensions</span></div>
+            </div>
+            <p class="small text-muted">Det går inte att klicka på en länk till den sidan – den måste skrivas in (eller klistras in) i adressfältet.</p>
+        </div>
+    </div>
+
+    <div class="step">
+        <div class="step-no">3</div>
+        <div class="step-body">
+            <h2>Slå på Utvecklarläge och läs in tillägget</h2>
+            <ol type="a">
+                <li>Slå på reglaget <strong>Utvecklarläge</strong> uppe till höger. Då dyker en rad med knappar upp.</li>
+                <li>Klicka på <strong>Läs in okomprimerat tillägg</strong>.</li>
+                <li>Välj mappen <strong>Innebandystats-plugin</strong> från steg 1 och klicka på <strong>Välj mapp</strong> (Mac: <strong>Välj</strong>).</li>
+            </ol>
+            <div class="mock">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span style="font-size:1.15rem">Tillägg</span>
+                    <span class="hl px-1">Utvecklarläge <span class="toggle"></span></span>
+                </div>
+                <span class="chrome-btn primary hl">Läs in okomprimerat tillägg</span>
+                <span class="chrome-btn">Paketera tillägg</span>
+                <span class="chrome-btn">Uppdatera</span>
+            </div>
+            <div class="note"><strong>Tips:</strong> Är Chrome på engelska heter det <strong>Developer mode</strong> och <strong>Load unpacked</strong>.</div>
+        </div>
+    </div>
+
+    <div class="step">
+        <div class="step-no">4</div>
+        <div class="step-body">
+            <h2>Kontrollera att det fungerade</h2>
+            <p>Ett nytt kort med den blå bollikonen visas på tilläggssidan:</p>
+            <div class="mock d-flex gap-3 align-items-center">
+                <img src="/plugin-icon.png" alt="" class="plugin-icon">
+                <div>
+                    <div class="fw-semibold">Innebandystats <span class="ms-2">@version</span></div>
+                    <div class="small text-muted">Serietabeller, poängligor och matchanalys direkt på stats.innebandy.se.</div>
+                </div>
+            </div>
+            <p>Ser du kortet är installationen klar.</p>
+        </div>
+    </div>
+
+    <div class="step">
+        <div class="step-no">5</div>
+        <div class="step-body">
+            <h2>Fäst ikonen så att den syns</h2>
+            <p>Klicka på <strong>pusselbiten</strong> uppe till höger i Chrome och sedan på <strong>nålen</strong> bredvid <strong>Innebandystats</strong>. Nu syns den blå bollikonen bredvid adressfältet.</p>
+            <div class="mock">
+                <div class="mock-label">Tillägg</div>
+                <div class="d-flex align-items-center gap-2">
+                    <img src="/plugin-icon.png" alt="" style="width:20px;height:20px">
+                    <span class="flex-grow-1">Innebandystats</span>
+                    <span class="hl px-1" title="Fäst">📌</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="step">
+        <div class="step-no">6</div>
+        <div class="step-body">
+            <h2>Använd tillägget</h2>
+            <ol>
+                <li>Gå till <a href="https://stats.innebandy.se" target="_blank" rel="noopener">stats.innebandy.se</a> och välj en serie.</li>
+                <li>Klicka på <strong>Spelprogram</strong>. Tillägget hämtar automatiskt alla spelade matcher i serien och skickar dem hit. Det tar en liten stund – låt fliken vara öppen.</li>
+                <li>Klicka på den blå bollikonen för att se tabell, poängliga och matcher i en panel vid sidan av sidan.</li>
+            </ol>
+            <p>En liten <strong>siffra</strong> på ikonen visar hur många uppgifter som väntar på att skickas. När den försvinner är allt skickat och syns här på sidan.</p>
+            <div class="note"><strong>Tips:</strong> När pluginet är installerat finns knappen <strong>Synka senaste</strong> på varje serie här i appen – den hämtar de senaste resultaten utan att du behöver lämna sidan.</div>
+        </div>
+    </div>
+
+    <h2 class="h4 mt-5 mb-3">Om något krånglar</h2>
+    <div class="table-responsive">
+        <table class="table table-bordered">
+            <thead class="table-light"><tr><th style="width:38%">Problem</th><th>Gör så här</th></tr></thead>
+            <tbody>
+                <tr><td>Det står <strong>Manifestfil saknas</strong> eller <strong>Manifest file is missing</strong>.</td>
+                    <td>Du valde fel mapp. Välj mappen <strong>Innebandystats-plugin</strong> – den ska innehålla en fil som heter <strong>manifest</strong>. Ibland ligger den en nivå längre in: öppna mappen och välj mappen med samma namn där inne.</td></tr>
+                <tr><td>Knappen <strong>Läs in okomprimerat tillägg</strong> syns inte.</td>
+                    <td>Reglaget <strong>Utvecklarläge</strong> är inte påslaget. Slå på det (steg 3).</td></tr>
+                <tr><td>Ikonen syns inte uppe till höger.</td>
+                    <td>Fäst den via pusselbiten (steg 5).</td></tr>
+                <tr><td>Chrome visar en ruta om tillägg i <strong>utvecklarläge</strong>.</td>
+                    <td>Det är normalt för tillägg som installeras på det här sättet. Stäng rutan med krysset. Klicka <strong>inte</strong> på Inaktivera.</td></tr>
+                <tr><td>Tillägget har slutat fungera eller försvunnit.</td>
+                    <td>Mappen har troligen flyttats eller raderats. Ladda ner och packa upp filen igen och gör om steg 3.</td></tr>
+                <tr><td>Ett <strong>rött utropstecken</strong> syns på ikonen.</td>
+                    <td>Uppgifterna kunde inte skickas just nu. Tillägget försöker igen automatiskt var femte minut.</td></tr>
+                <tr><td>Inget händer när jag öppnar en serie.</td>
+                    <td>Ladda om sidan (<strong>F5</strong>, eller <strong>Cmd + R</strong> på Mac). Sidor som var öppna innan tillägget installerades behöver laddas om en gång.</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h2 class="h4 mt-5 mb-2">Installera en ny version</h2>
+    <p>
+        Ladda ner pluginet igen, packa upp det och ersätt filerna i den gamla mappen <strong>Innebandystats-plugin</strong>
+        (svara <strong>Ersätt</strong> om datorn frågar). Gå sedan till <strong>chrome://extensions</strong> och klicka på den
+        runda pilen på Innebandystats-kortet. Versionsnumret på kortet ska då vara @(version ?? "den senaste").
+    </p>
+</div>
