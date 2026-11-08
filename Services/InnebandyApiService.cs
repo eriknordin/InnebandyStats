@@ -1,4 +1,4 @@
-using System.Net.Http.Headers;
+using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using InnebandyStats.Models;
@@ -8,20 +8,14 @@ namespace InnebandyStats.Services;
 
 public class InnebandyApiService
 {
-    private readonly HttpClient _httpClient;
+    private readonly ApiDocumentStore _store;
     private readonly ILogger<InnebandyApiService> _logger;
     private readonly IMemoryCache _cache;
 
-    private const string StartKitUrl = "https://api.innebandy.se/StatsAppApi/api/startkit";
-    private const string DefaultApiRoot = "https://api.innebandy.se/v2/api/public/";
-    private const string StartKitCacheKey = "api_startkit";
-
-    // Minsta tid ett API-svar återanvänds innan samma endpoint anropas igen
+    // Hur länge beräknad data återanvänds. Cachen töms dessutom när pluginet skickar in ny data.
     private static readonly TimeSpan ApiCacheDuration = TimeSpan.FromMinutes(10);
-    // Matchlistan bär ställningen i pågående matcher och hämtas därför oftare
+    // Matchlistan bär ställningen i pågående matcher och läses därför oftare
     private static readonly TimeSpan MatchListCacheDuration = TimeSpan.FromMinutes(2);
-    // Token gäller 30 min hos innebandy.se
-    private static readonly TimeSpan TokenCacheDuration = TimeSpan.FromMinutes(20);
     private static readonly object CacheLock = new();
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -29,11 +23,9 @@ public class InnebandyApiService
         PropertyNameCaseInsensitive = true
     };
 
-    private record StartKit(string Token, string ApiRoot);
-
-    public InnebandyApiService(HttpClient httpClient, ILogger<InnebandyApiService> logger, IMemoryCache cache)
+    public InnebandyApiService(ApiDocumentStore store, ILogger<InnebandyApiService> logger, IMemoryCache cache)
     {
-        _httpClient = httpClient;
+        _store = store;
         _logger = logger;
         _cache = cache;
     }
@@ -63,57 +55,64 @@ public class InnebandyApiService
         }
     }
 
-    private Task<StartKit> GetStartKitAsync() =>
-        GetOrFetchAsync(StartKitCacheKey, TokenCacheDuration, async () =>
-        {
-            _logger.LogInformation("Hämtar token från startkit API...");
-
-            var response = await _httpClient.GetAsync(StartKitUrl);
-            response.EnsureSuccessStatusCode();
-
-            var json = await response.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(json);
-
-            if (!doc.RootElement.TryGetProperty("accessToken", out var tokenProp))
-                throw new Exception("Kunde inte hitta accessToken i startkit-svaret.");
-
-            var token = tokenProp.GetString()
-                ?? throw new Exception("accessToken var null i startkit-svaret.");
-
-            var apiRoot = DefaultApiRoot;
-            if (doc.RootElement.TryGetProperty("apiRoot", out var rootProp)
-                && rootProp.GetString() is { Length: > 0 } root)
-            {
-                apiRoot = root.EndsWith('/') ? root : root + "/";
-            }
-
-            _logger.LogInformation("Token hämtad.");
-            return new StartKit(token, apiRoot);
-        });
-
-    // Hämtar rå JSON från API:t, cachad per sökväg (endpoint + parametrar)
+    // Hämtar rå JSON för en API-sökväg ur datalagret (fyllt av Chrome-pluginet), cachad per sökväg.
+    // Saknas dokumentet kastas HttpRequestException med 404, som när API:t saknade datan.
     private Task<string> GetApiJsonAsync(string path, TimeSpan? ttl = null) =>
         GetOrFetchAsync($"api_{path}", ttl ?? ApiCacheDuration, async () =>
-        {
-            var response = await SendAuthorizedAsync(path);
-            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-            {
-                // Token kan ha gått ut i förtid – hämta ny och försök igen
-                _cache.Remove(StartKitCacheKey);
-                response = await SendAuthorizedAsync(path);
-            }
+            await _store.GetAsync(path) ?? throw await MissingDataAsync(path));
 
-            response.EnsureSuccessStatusCode();
-            return await response.Content.ReadAsStringAsync();
-        });
+    private const string StatsSite = "https://stats.innebandy.se";
 
-    private async Task<HttpResponseMessage> SendAuthorizedAsync(string path)
+    // Felet innehåller länken till sidan på stats.innebandy.se som hämtar datan (visas som länk i vyerna)
+    public async Task<HttpRequestException> MissingDataAsync(string path)
     {
-        var startKit = await GetStartKitAsync();
-        _logger.LogDebug("API-anrop: {Path}", path);
-        var request = new HttpRequestMessage(HttpMethod.Get, startKit.ApiRoot + path);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", startKit.Token);
-        return await _httpClient.SendAsync(request);
+        var url = await GetSiteUrlAsync(path);
+        var message = url != null
+            ? $"Ingen insamlad data för {path.TrimEnd('/')} ännu. Öppna sidan med pluginet aktivt: {url}"
+            : $"Ingen insamlad data för {path.TrimEnd('/')} ännu.";
+        return new HttpRequestException(message, null, HttpStatusCode.NotFound);
+    }
+
+    // Seriens spelprogram på stats.innebandy.se och när matchlistan senast synkades (svensk tid)
+    public async Task<(string? Url, DateTime? SyncedAt)> GetSeriesSyncInfoAsync(int competitionId)
+    {
+        var path = $"competitions/{competitionId}/matches";
+        var url = await GetSiteUrlAsync(path);
+        var receivedAt = await _store.GetReceivedAtAsync(path);
+        return (url, receivedAt is { } utc ? MatchState.ToSwedish(utc) : null);
+    }
+
+    // Sidan på stats.innebandy.se som laddar en viss API-sökväg
+    private async Task<string?> GetSiteUrlAsync(string path)
+    {
+        switch (path.Trim('/').Split('/'))
+        {
+            case ["seasons"] or ["federations"]:
+                return $"{StatsSite}/forbund/1/livematches";
+            case ["seasons", _, "federations", var federationId, "competitions"]:
+                return $"{StatsSite}/forbund/{federationId}/livematches";
+            case ["competitions", var competitionId, "matches"]:
+                return await CurrentSeasonIdAsync() is int season
+                    ? $"{StatsSite}/sasong/{season}/serie/{competitionId}/spelprogram"
+                    : $"{StatsSite}/forbund/1/livematches";
+            case ["matches", var matchIdText, ..] when int.TryParse(matchIdText, out var matchId):
+                var competition = await _store.FindCompetitionForMatchAsync(matchId);
+                var currentSeason = await CurrentSeasonIdAsync();
+                return competition != null && currentSeason != null
+                    ? $"{StatsSite}/sasong/{currentSeason}/serie/{competition}/match/{matchId}"
+                    : null;
+            default:
+                return null;
+        }
+    }
+
+    // Innevarande säsong ur synkade säsonger (säsongs-id behövs i stats.innebandy.se:s adresser)
+    private async Task<int?> CurrentSeasonIdAsync()
+    {
+        var json = await _store.GetAsync("seasons");
+        if (json == null) return null;
+        var seasons = JsonSerializer.Deserialize<List<Season>>(json, JsonOptions) ?? new List<Season>();
+        return (seasons.FirstOrDefault(s => s.IsCurrentSeason) ?? seasons.MaxBy(s => s.SeasonID))?.SeasonID;
     }
 
     public async Task<List<Match>> GetMatchesAsync(int competitionId)
@@ -124,7 +123,16 @@ public class InnebandyApiService
 
     public async Task<Match?> GetMatchDetailsAsync(int matchId)
     {
-        var json = await GetApiJsonAsync($"matches/{matchId}");
+        string json;
+        try
+        {
+            json = await GetApiJsonAsync($"matches/{matchId}");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            // Matchen är inte insamlad än – serievyerna räknar på de matcher som finns
+            return null;
+        }
         var match = JsonSerializer.Deserialize<Match>(json, JsonOptions);
         if (match != null)
             FillEventTeams(match);
@@ -345,6 +353,20 @@ public class InnebandyApiService
                         if (string.IsNullOrEmpty(standing.Position)) standing.Position = player.Position;
                     }
                 }
+            }
+
+            // Reserv när spelardokument saknas: ålder och födelseår ur synkade lagtrupper,
+            // därefter ur laguppställningar (som på nya stats.innebandy.se oftast saknar dem)
+            var ages = await _store.GetRosterAgesAsync();
+            foreach (var pm in data.Played.Where(p => p.Lineup != null))
+                foreach (var p in pm.Lineup!.HomeTeamPlayers.Concat(pm.Lineup.AwayTeamPlayers))
+                    if (p.BirthYear > 0) ages.TryAdd(p.PlayerID, (p.Age, p.BirthYear));
+
+            foreach (var standing in standings.Where(s => s.BirthYear == 0 || s.Age == 0))
+            {
+                if (!ages.TryGetValue(standing.PlayerID, out var age)) continue;
+                if (standing.Age == 0) standing.Age = age.Age;
+                if (standing.BirthYear == 0) standing.BirthYear = age.BirthYear;
             }
 
             _logger.LogInformation("Poängliga klar för tävling {CompetitionId} ({Count} spelare).", competitionId, standings.Count);

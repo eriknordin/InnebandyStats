@@ -46,7 +46,7 @@
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
-        <div class="alert alert-danger">@Model.ErrorMessage</div>
+        <partial name="_ErrorAlert" model="Model.ErrorMessage" />
     }
     else
     {

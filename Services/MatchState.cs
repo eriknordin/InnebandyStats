@@ -37,6 +37,11 @@ public static class MatchState
 
     public static DateTime SwedishToday => SwedishNow.Date;
 
+    public static DateTime ToSwedish(DateTime utc) =>
+        Stockholm != null
+            ? TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), Stockholm)
+            : utc.AddHours(1);
+
     private static DateTime LastSunday(int year, int month)
     {
         var last = new DateTime(year, month, DateTime.DaysInMonth(year, month), 0, 0, 0, DateTimeKind.Utc);

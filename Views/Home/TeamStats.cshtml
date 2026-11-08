@@ -20,7 +20,7 @@
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
-        <div class="alert alert-danger">@Model.ErrorMessage</div>
+        <partial name="_ErrorAlert" model="Model.ErrorMessage" />
     }
 
     @if (Model.Teams.Count == 0 && string.IsNullOrEmpty(Model.ErrorMessage))
