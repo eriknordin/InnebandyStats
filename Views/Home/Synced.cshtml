@@ -1,0 +1,137 @@
+﻿@model SyncOverviewViewModel
+@{
+    ViewData["Title"] = "Synkad data";
+    var sv = new System.Globalization.CultureInfo("sv-SE");
+    string When(DateTime t) => t.Date == InnebandyStats.Services.MatchState.SwedishToday
+        ? "idag " + t.ToString("HH:mm", sv)
+        : t.ToString("d MMM HH:mm", sv);
+}
+
+<div class="container mt-4">
+    <h1 class="mb-1">Synkad data</h1>
+    <p class="text-muted mb-4">Serier som Chrome-pluginet har samlat in från stats.innebandy.se. Sök på serie, lag eller säsong.</p>
+
+    <div class="card mb-4" id="syncedData">
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <span class="fw-semibold">Serier <span class="text-muted fw-normal small">· @Model.Competitions.Count @(Model.Competitions.Count == 1 ? "serie" : "serier")</span></span>
+            @if (Model.LastReceivedAt is { } last)
+            {
+                <span class="text-muted small">Senast mottaget @When(last) · @Model.DocumentCount dokument</span>
+            }
+        </div>
+        <div class="card-body">
+            @if (Model.Competitions.Count == 0)
+            {
+                <p class="mb-1">Inga serier är synkade ännu.</p>
+                <p class="text-muted small mb-2">Installera Chrome-pluginet och öppna sedan en series spelprogram på <a href="https://stats.innebandy.se" target="_blank" rel="noopener">stats.innebandy.se</a> – serien och dess matcher skickas hit automatiskt.</p>
+                <a class="btn btn-sm btn-primary" href="/plugin">Ladda ner och installera pluginet</a>
+            }
+            else
+            {
+                <input type="search" id="syncSearch" class="form-control mb-3" placeholder="Sök serie, lag eller säsong…" autocomplete="off" aria-label="Sök bland synkade serier">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0" id="syncTable">
+                        <thead>
+                            <tr>
+                                <th>Serie</th>
+                                <th class="d-none d-md-table-cell">Säsong</th>
+                                <th class="text-end">Spelade</th>
+                                <th>Matchdata</th>
+                                <th class="d-none d-md-table-cell text-end">Uppdaterad</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var c in Model.Competitions)
+                            {
+                                var search = string.Join(" ", new[] { c.Name, c.Category, c.Season }.Concat(c.Teams)).ToLowerInvariant();
+                                <tr data-search="@search">
+                                    <td>
+                                        <a href="/Home/SeriesTable/@c.CompetitionId" class="fw-semibold text-decoration-none">@c.Name</a>
+                                        <div class="text-muted small">@string.Join(" · ", new[] { c.Category, $"{c.Teams.Count} lag" }.Where(s => !string.IsNullOrEmpty(s)))<span class="d-md-none"> · @c.Season</span></div>
+                                        <div class="team-hits small mt-1" hidden>
+                                            @foreach (var team in c.Teams)
+                                            {
+                                                <a class="badge text-bg-light border text-decoration-none me-1 mb-1" hidden data-team="@team.ToLowerInvariant()"
+                                                   href="/Home/TeamView?competitionId=@c.CompetitionId&teamName=@Uri.EscapeDataString(team)">@team</a>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td class="d-none d-md-table-cell">@c.Season</td>
+                                    <td class="text-end">@c.Played / @c.Matches</td>
+                                    <td style="min-width:120px">
+                                        @if (c.Played == 0)
+                                        {
+                                            <span class="text-muted small">Inga spelade</span>
+                                        }
+                                        else if (c.IsComplete)
+                                        {
+                                            <span class="badge text-bg-success">Komplett</span>
+                                        }
+                                        else
+                                        {
+                                            var percent = c.DetailsCollected * 100 / c.Played;
+                                            <div class="small">@c.DetailsCollected av @c.Played matcher</div>
+                                            <div class="progress" style="height:4px" role="progressbar" aria-valuenow="@percent" aria-valuemin="0" aria-valuemax="100">
+                                                <div class="progress-bar bg-warning" style="width:@percent%"></div>
+                                            </div>
+                                        }
+                                        @if (c.DetailsCollected > 0 && c.LineupsCollected < c.DetailsCollected)
+                                        {
+                                            <div class="text-muted small">@c.LineupsCollected @(c.LineupsCollected == 1 ? "laguppställning" : "laguppställningar")</div>
+                                        }
+                                    </td>
+                                    <td class="d-none d-md-table-cell text-end text-muted small">@When(c.LastUpdatedAt)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p id="syncNoHits" class="text-muted small mt-2 mb-0" hidden>Inga synkade serier matchar sökningen.</p>
+            }
+            @if (Model.Competitions.Count > 0)
+            {
+                <p class="text-muted small mt-3 mb-0">Data samlas in med <a href="/plugin">Chrome-pluginet</a>.</p>
+            }
+            @if (Model.Competitions.Count > 0 && (!Model.HasSeasons || !Model.HasFederations))
+            {
+                <p class="text-muted small mt-3 mb-0">Säsongs- och förbundslistorna i menyn är inte synkade än – de skickas när du laddar valfri sida på stats.innebandy.se med pluginet.</p>
+            }
+        </div>
+    </div>
+
+</div>
+
+@section Scripts {
+<script>
+// Sök bland synkade serier: filtrerar på serie, kategori, säsong och lag. Träffade lag visas som länkar.
+document.addEventListener('DOMContentLoaded', function () {
+    const input = document.getElementById('syncSearch');
+    if (!input) return;
+    const rows = [...document.querySelectorAll('#syncTable tbody tr')];
+    const noHits = document.getElementById('syncNoHits');
+
+    function filter() {
+        const terms = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        let visible = 0;
+        rows.forEach(row => {
+            const hit = terms.every(t => row.dataset.search.includes(t));
+            row.hidden = !hit;
+            if (hit) visible++;
+
+            const hitsBox = row.querySelector('.team-hits');
+            let teamHits = 0;
+            row.querySelectorAll('[data-team]').forEach(a => {
+                const show = hit && terms.length > 0 && terms.some(t => t.length >= 2 && a.dataset.team.includes(t));
+                a.hidden = !show;
+                if (show) teamHits++;
+            });
+            hitsBox.hidden = teamHits === 0;
+        });
+        noHits.hidden = visible > 0;
+    }
+
+    input.addEventListener('input', filter);
+});
+
+</script>
+}

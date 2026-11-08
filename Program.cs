@@ -22,6 +22,7 @@ app.UseAuthorization();
 
 app.MapStaticAssets();
 app.MapIngest();
+app.MapPluginDownload();
 
 app.MapControllerRoute(
     name: "default",
