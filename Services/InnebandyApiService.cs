@@ -118,7 +118,80 @@ public class InnebandyApiService
     public async Task<List<Match>> GetMatchesAsync(int competitionId)
     {
         var json = await GetApiJsonAsync($"competitions/{competitionId}/matches", MatchListCacheDuration);
-        return JsonSerializer.Deserialize<List<Match>>(json, JsonOptions) ?? new List<Match>();
+        var matches = JsonSerializer.Deserialize<List<Match>>(json, JsonOptions) ?? new List<Match>();
+        RenameTeams(matches, BuildTeamNameMap(matches));
+        return matches;
+    }
+
+    // Statistiken nycklar på lagnamn. Har en förening flera lag i samma serie med samma namn
+    // (t.ex. två "Vallentuna IBK") får de unika namn så att de inte slås ihop.
+    // Returnerar TeamID -> nytt namn för de lag som behöver döpas om.
+    private static Dictionary<int, string> BuildTeamNameMap(IEnumerable<Match> matches)
+    {
+        var teams = matches
+            .SelectMany(m => new[]
+            {
+                (Id: m.HomeTeamID, Name: m.HomeTeam.Trim(), Short: m.HomeTeamShortName.Trim()),
+                (Id: m.AwayTeamID, Name: m.AwayTeam.Trim(), Short: m.AwayTeamShortName.Trim())
+            })
+            .Where(t => t.Id > 0)
+            .GroupBy(t => t.Id)
+            .Select(g => g.First())
+            .ToList();
+
+        var map = new Dictionary<int, string>();
+        foreach (var group in teams.GroupBy(t => t.Name).Where(g => g.Count() > 1))
+        {
+            var ordered = group.OrderBy(t => t.Id).ToList();
+            // Kortnamnen duger om de skiljer lagen åt, annars numreras lagen
+            var shortsDistinct = ordered.All(t => t.Short.Length > 0 && t.Short != t.Name)
+                                 && ordered.Select(t => t.Short).Distinct().Count() == ordered.Count;
+            for (var i = 0; i < ordered.Count; i++)
+                map[ordered[i].Id] = shortsDistinct
+                    ? $"{group.Key} ({ordered[i].Short})"
+                    : $"{group.Key} ({i + 1})";
+        }
+        return map;
+    }
+
+    private static void RenameTeams(IEnumerable<Match> matches, Dictionary<int, string> map)
+    {
+        if (map.Count == 0) return;
+        foreach (var m in matches)
+            RenameTeams(m, map);
+    }
+
+    private static void RenameTeams(Match m, Dictionary<int, string> map)
+    {
+        if (map.Count == 0) return;
+        var oldHome = m.HomeTeam;
+        var oldAway = m.AwayTeam;
+        if (map.TryGetValue(m.HomeTeamID, out var home)) m.HomeTeam = home;
+        if (map.TryGetValue(m.AwayTeamID, out var away)) m.AwayTeam = away;
+        if (m.Events == null) return;
+        foreach (var evt in m.Events)
+        {
+            if (evt.MatchTeamID == m.HomeMatchTeamID && evt.MatchTeamID != 0) evt.MatchTeamName = m.HomeTeam;
+            else if (evt.MatchTeamID == m.AwayMatchTeamID && evt.MatchTeamID != 0) evt.MatchTeamName = m.AwayTeam;
+            else if (evt.MatchTeamName == oldHome && oldHome != oldAway) evt.MatchTeamName = m.HomeTeam;
+            else if (evt.MatchTeamName == oldAway && oldHome != oldAway) evt.MatchTeamName = m.AwayTeam;
+        }
+    }
+
+    // Samma namnbyte för en enskild match, utifrån seriens matchlista
+    private async Task ApplyCompetitionTeamNamesAsync(Match match)
+    {
+        if (match.CompetitionID <= 0) return;
+        try
+        {
+            var json = await GetApiJsonAsync($"competitions/{match.CompetitionID}/matches", MatchListCacheDuration);
+            var matches = JsonSerializer.Deserialize<List<Match>>(json, JsonOptions) ?? new List<Match>();
+            RenameTeams(match, BuildTeamNameMap(matches));
+        }
+        catch (HttpRequestException)
+        {
+            // Serien är inte synkad – behåll namnen som de är
+        }
     }
 
     public async Task<Match?> GetMatchDetailsAsync(int matchId)
@@ -135,7 +208,10 @@ public class InnebandyApiService
         }
         var match = JsonSerializer.Deserialize<Match>(json, JsonOptions);
         if (match != null)
+        {
             FillEventTeams(match);
+            await ApplyCompetitionTeamNamesAsync(match);
+        }
         return match;
     }
 
