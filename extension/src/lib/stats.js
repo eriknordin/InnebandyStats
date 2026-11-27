@@ -23,16 +23,19 @@ export const isUpcoming = (m, now = new Date()) => !isPlayed(m) && matchTime(m) 
 
 // scope: all, home (bara hemmamatcher) eller away (bara bortamatcher)
 export function buildTable(matches, scope = 'all') {
+  // Nycklas på namn: en förenings lag i samma serie (t.ex. "Vallentuna IBK (A)" och "(B)")
+  // kan ha samma lag-id och skulle annars slås ihop
   const teams = new Map();
 
   const ensure = (id, name) => {
-    if (!teams.has(id)) {
-      teams.set(id, {
-        teamId: id, teamName: (name ?? '').trim(),
+    const teamName = (name ?? '').trim();
+    if (!teams.has(teamName)) {
+      teams.set(teamName, {
+        teamId: id, teamName,
         played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, form: []
       });
     }
-    return teams.get(id);
+    return teams.get(teamName);
   };
 
   const add = (team, gf, ga) => {
